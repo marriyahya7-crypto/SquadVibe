@@ -38,44 +38,90 @@ class _HomePageState extends State<HomePage> {
   int tab = 0;
   String myStatus = 'En ligne';
 
-  final List<Map<String, dynamic>> friends = [
-    {'name': 'Alex', 'game': 'En jeu', 'online': true},
-    {'name': 'Yanis', 'game': 'Disponible', 'online': true},
-    {'name': 'Mehdi', 'game': 'Absent', 'online': false},
-    {'name': 'Sam', 'game': 'En jeu', 'online': true},
-  ];
-
+  final List<String> friends = [];
+  final TextEditingController friendController =
+      TextEditingController();
+  final TextEditingController messageController =
+      TextEditingController();
   final List<String> messages = [];
-  final TextEditingController controller = TextEditingController();
 
   @override
   void dispose() {
-    controller.dispose();
+    friendController.dispose();
+    messageController.dispose();
     super.dispose();
   }
 
-  void summonFriends() {
+  void addFriend() {
+    friendController.clear();
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('📣 Appeler la squad'),
-        content: const Text(
-          'Ta demande est prête ! '
-          'Les notifications réelles seront ajoutées plus tard.',
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Ajouter un ami'),
+        content: TextField(
+          controller: friendController,
+          autofocus: true,
+          maxLength: 25,
+          decoration: const InputDecoration(
+            labelText: 'Pseudo ou code ami',
+            hintText: 'Exemple : Yahya123',
+            prefixIcon: Icon(Icons.person_add_alt_1),
+          ),
+          onSubmitted: (_) {
+            saveFriend(dialogContext);
+          },
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Compris'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => saveFriend(dialogContext),
+            child: const Text('Ajouter'),
           ),
         ],
       ),
     );
   }
 
-  Widget homeContent() {
-    final online = friends.where((f) => f['online'] == true).length;
+  void saveFriend(BuildContext dialogContext) {
+    final name = friendController.text.trim();
 
+    if (name.isEmpty) return;
+
+    if (friends.any(
+      (friend) => friend.toLowerCase() == name.toLowerCase(),
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cet ami est déjà dans ta liste.')),
+      );
+      return;
+    }
+
+    setState(() {
+      friends.add(name);
+    });
+
+    Navigator.pop(dialogContext);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$name ajouté à ta liste !')),
+    );
+  }
+
+  void sendMessage() {
+    final message = messageController.text.trim();
+    if (message.isEmpty) return;
+
+    setState(() {
+      messages.add(message);
+      messageController.clear();
+    });
+  }
+
+  Widget homeContent() {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -108,13 +154,10 @@ class _HomePageState extends State<HomePage> {
             children: [
               const Icon(Icons.groups_rounded, size: 35),
               const SizedBox(height: 12),
-              const Text(
-                'MA SQUAD',
-                style: TextStyle(fontSize: 13, letterSpacing: 2),
-              ),
+              const Text('MA SQUAD'),
               const SizedBox(height: 5),
               Text(
-                '$online amis en ligne',
+                '${friends.length} ami(s)',
                 style: const TextStyle(
                   fontSize: 23,
                   fontWeight: FontWeight.bold,
@@ -124,9 +167,9 @@ class _HomePageState extends State<HomePage> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: summonFriends,
-                  icon: const Icon(Icons.campaign_rounded),
-                  label: const Text('Appeler la squad'),
+                  onPressed: addFriend,
+                  icon: const Icon(Icons.person_add),
+                  label: const Text('Ajouter un ami'),
                   style: FilledButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF4C1D95),
@@ -154,29 +197,39 @@ class _HomePageState extends State<HomePage> {
         ),
         const SizedBox(height: 25),
         const Text(
-          'Tes amis',
+          'Mes amis',
           style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 10),
-        ...friends.map((friend) {
-          final isOnline = friend['online'] as bool;
-          return Card(
+        if (friends.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(20),
+            child: Text(
+              'Aucun ami pour le moment. '
+              'Appuie sur « Ajouter un ami » pour commencer.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ...friends.map(
+          (friend) => Card(
             color: const Color(0xFF1C1D2B),
             child: ListTile(
               leading: CircleAvatar(
                 backgroundColor: const Color(0xFF312E81),
-                child: Text(friend['name'][0]),
+                child: Text(friend[0].toUpperCase()),
               ),
-              title: Text(friend['name'] as String),
-              subtitle: Text(friend['game'] as String),
-              trailing: Icon(
-                Icons.circle,
-                size: 11,
-                color: isOnline ? Colors.greenAccent : Colors.grey,
+              title: Text(friend),
+              subtitle: const Text('Ami ajouté sur cet appareil'),
+              trailing: IconButton(
+                icon: const Icon(Icons.person_remove_outlined),
+                tooltip: 'Supprimer',
+                onPressed: () {
+                  setState(() => friends.remove(friend));
+                },
               ),
             ),
-          );
-        }),
+          ),
+        ),
       ],
     );
   }
@@ -189,7 +242,7 @@ class _HomePageState extends State<HomePage> {
             'Chat de la squad',
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
           ),
-          subtitle: Text('Discussion locale de démonstration'),
+          subtitle: Text('Messages locaux de démonstration'),
         ),
         Expanded(
           child: ListView(
@@ -216,7 +269,7 @@ class _HomePageState extends State<HomePage> {
             children: [
               Expanded(
                 child: TextField(
-                  controller: controller,
+                  controller: messageController,
                   decoration: const InputDecoration(
                     hintText: 'Écrire un message...',
                     border: OutlineInputBorder(),
@@ -235,15 +288,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void sendMessage() {
-    final message = controller.text.trim();
-    if (message.isEmpty) return;
-    setState(() {
-      messages.add(message);
-      controller.clear();
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -252,7 +296,9 @@ class _HomePageState extends State<HomePage> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
-        onDestinationSelected: (index) => setState(() => tab = index),
+        onDestinationSelected: (index) {
+          setState(() => tab = index);
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_rounded),
