@@ -7,9 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 const purple = Color(0xFF9B5CFF);
 const background = Color(0xFF100D19);
 const panel = Color(0xFF201A2D);
-
-final db = FirebaseFirestore.instance;
-final auth = FirebaseAuth.instance;
+const muted = Color(0xFFAAA1BB);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,230 +15,261 @@ Future<void> main() async {
   runApp(const SquadVibeApp());
 }
 
-String chatIdFor(String a, String b) {
-  final ids = [a, b]..sort();
-  return '${ids[0]}_${ids[1]}';
+class SquadVibeApp extends StatelessWidget {
+  const SquadVibeApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'SquadVibe',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: background,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: purple,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: panel,
+          hintStyle: const TextStyle(color: muted),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(16),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+      home: const AuthGate(),
+    );
+  }
 }
 
-void notice(BuildContext context, String message) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text(message)),
-  );
-}
-
-
+// L'authentification décide toujours de l'écran à afficher.
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
-      stream: auth.authStateChanges(),
+      stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const LoadingScreen();
         }
 
         final user = snapshot.data;
-        if (user == null) return const LoginPage();
 
-        return StreamBuilder<
-            DocumentSnapshot<Map<String, dynamic>>>(
-          stream: db.collection('users').doc(user.uid).snapshots(),
-          builder: (context, profile) {
-            if (profile.connectionState ==
-                    ConnectionState.waiting ||
-                !profile.hasData) {
-              return const Scaffold(
-                body: Center(
-                  child: CircularProgressIndicator(),
-                ),
-              );
-            }
+        if (user == null) {
+          return const LoginScreen();
+        }
 
-            if (profile.hasError) {
-              return const Scaffold(
-                body: Center(
-                  child: Text(
-                    'Impossible de vérifier ton profil.',
-                  ),
-                ),
-              );
-            }
-
-            if (!profile.data!.exists) {
-              return const LoginPage();
-            }
-
-            return const HomePage();
-          },
-        );
+        return HomeScreen(key: ValueKey(user.uid));
       },
     );
   }
 }
 
-
-class AuthGate extends StatelessWidget {
-  const AuthGate({super.key});
+class LoadingScreen extends StatelessWidget {
+  const LoadingScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: auth.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
-        }
-        return snapshot.data == null
-            ? const LoginPage()
-            : const HomePage();
-      },
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(color: purple),
+      ),
     );
   }
 }
 
-// -------------------- CONNEXION / INSCRIPTION --------------------
-
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class Brand extends StatelessWidget {
+  const Brand({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [
+        Icon(Icons.bolt, color: purple, size: 58),
+        SizedBox(height: 6),
+        Text(
+          'SQUADVIBE',
+          style: TextStyle(
+            fontSize: 30,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+          ),
+        ),
+        SizedBox(height: 5),
+        Text(
+          'Ta squad, tes amis, ton univers.',
+          style: TextStyle(color: muted),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
 }
 
-class _LoginPageState extends State<LoginPage> {
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
   final email = TextEditingController();
   final password = TextEditingController();
-  final pseudo = TextEditingController();
-
-  bool registering = false;
   bool loading = false;
-  bool hidePassword = true;
-  String error = '';
+  bool createAccount = false;
+  bool showPassword = false;
+
+  final username = TextEditingController();
 
   @override
   void dispose() {
     email.dispose();
     password.dispose();
-    pseudo.dispose();
+    username.dispose();
     super.dispose();
   }
 
-  Future<void> resetPassword() async {
-    final mail = email.text.trim();
-    if (mail.isEmpty) {
-      setState(() => error = 'Entre ton adresse email.');
+  Future<void> submit() async {
+    if (loading) return;
+
+    final mail = email.text.trim().toLowerCase();
+    final pass = password.text;
+    final pseudo = username.text.trim();
+
+    if (mail.isEmpty ||
+        !mail.contains('@') ||
+        pass.isEmpty ||
+        (createAccount && pseudo.isEmpty)) {
+      showMessage('Remplis correctement tous les champs.');
       return;
     }
 
-    setState(() {
-      loading = true;
-      error = '';
-    });
+    if (createAccount && pass.length < 6) {
+      showMessage('Le mot de passe doit contenir au moins 6 caractères.');
+      return;
+    }
+
+    setState(() => loading = true);
+
+    UserCredential? credential;
+    bool createdAuthAccount = false;
 
     try {
-      await auth.sendPasswordResetEmail(email: mail);
-      if (mounted) {
-        notice(context, 'Si le compte existe, un email sera envoyé.');
+      if (createAccount) {
+        final normalized = pseudo.toLowerCase();
+
+        if (!RegExp(r'^[a-zA-Z0-9_.]{3,20}$').hasMatch(pseudo)) {
+          throw Exception(
+            'Pseudo : 3 à 20 caractères, lettres, chiffres, _ ou .',
+          );
+        }
+
+        credential = await FirebaseAuth.instance
+            .createUserWithEmailAndPassword(
+          email: mail,
+          password: pass,
+        );
+
+        createdAuthAccount = true;
+
+        final user = credential.user!;
+
+        // Le pseudo et le profil sont créés ensemble.
+        // Deux inscriptions ne peuvent pas réserver le même pseudo.
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
+          final db = FirebaseFirestore.instance;
+          final usernameRef = db.collection('usernames').doc(normalized);
+          final userRef = db.collection('users').doc(user.uid);
+
+          final usernameSnapshot = await transaction.get(usernameRef);
+          final userSnapshot = await transaction.get(userRef);
+
+          if (usernameSnapshot.exists) {
+            throw Exception('Ce pseudo est déjà utilisé.');
+          }
+
+          if (userSnapshot.exists) {
+            throw Exception('Ce profil existe déjà.');
+          }
+
+          transaction.set(usernameRef, {
+            'uid': user.uid,
+            'username': pseudo,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+
+          transaction.set(userRef, {
+            'uid': user.uid,
+            'username': pseudo,
+            'usernameLower': normalized,
+            'email': mail,
+            'bio': '',
+            'friends': <String>[],
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        });
+
+        if (mounted) {
+          showMessage('Compte créé avec succès !');
+        }
+      } else {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: mail,
+          password: pass,
+        );
       }
+
+      // Ne pas naviguer manuellement vers l'accueil :
+      // AuthGate suit l'état réel de Firebase.
     } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        setState(() => error = e.code == 'invalid-email'
-            ? 'Adresse email invalide.'
-            : 'Impossible d’envoyer le lien. Réessaie.');
+      if (createdAuthAccount && credential?.user != null) {
+        try {
+          await credential!.user!.delete();
+        } catch (_) {
+          // Si la suppression échoue, ne pas masquer l'erreur initiale.
+        }
       }
+
+      if (e.code == 'email-already-in-use') {
+        showMessage('Cette adresse possède déjà un compte.');
+      } else if (e.code == 'invalid-credential' ||
+          e.code == 'wrong-password' ||
+          e.code == 'user-not-found') {
+        showMessage('Adresse e-mail ou mot de passe incorrect.');
+      } else if (e.code == 'weak-password') {
+        showMessage('Choisis un mot de passe plus sécurisé.');
+      } else {
+        showMessage('Erreur Firebase : ${e.message ?? e.code}');
+      }
+    } catch (e) {
+      // Si la création du profil échoue après celle du compte,
+      // on tente de supprimer le compte incomplet.
+      if (createdAuthAccount && credential?.user != null) {
+        try {
+          await credential!.user!.delete();
+        } catch (_) {}
+      }
+
+      showMessage(
+        e.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
-  Future<void> submit() async {
-    FocusScope.of(context).unfocus();
-    setState(() {
-      loading = true;
-      error = '';
-    });
-
-    try {
-      final mail = email.text.trim();
-      final pass = password.text;
-
-      if (mail.isEmpty || pass.isEmpty) {
-        throw Exception('Remplis ton email et ton mot de passe.');
-      }
-
-      if (registering) {
-        final name = pseudo.text.trim();
-        final normalized = name.toLowerCase();
-
-        if (!RegExp(r'^[a-zA-Z0-9_]{3,20}$').hasMatch(name)) {
-          throw Exception(
-            'Pseudo de 3 à 20 caractères : lettres, chiffres ou _.');
-        }
-        if (pass.length < 6) {
-          throw Exception('Mot de passe : 6 caractères minimum.');
-        }
-
-        final credential = await auth.createUserWithEmailAndPassword(
-          email: mail,
-          password: pass,
-        );
-
-        final uid = credential.user!.uid;
-
-        try {
-          await db.runTransaction((tx) async {
-            final usernameRef = db.collection('usernames').doc(normalized);
-            final userRef = db.collection('users').doc(uid);
-            final existing = await tx.get(usernameRef);
-
-            if (existing.exists) {
-              throw Exception('Ce pseudo est déjà utilisé.');
-            }
-
-            tx.set(usernameRef, {'uid': uid});
-            tx.set(userRef, {
-              'uid': uid,
-              'pseudo': name,
-              'email': mail,
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-          });
-        } catch (_) {
-          await credential.user?.delete();
-          rethrow;
-        }
-      } else {
-        await auth.signInWithEmailAndPassword(
-          email: mail,
-          password: pass,
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      final messages = {
-        'email-already-in-use': 'Cet email possède déjà un compte.',
-        'invalid-email': 'Adresse email invalide.',
-        'weak-password': 'Mot de passe trop faible.',
-        'user-not-found': 'Aucun compte trouvé avec cet email.',
-        'wrong-password': 'Email ou mot de passe incorrect.',
-        'invalid-credential': 'Email ou mot de passe incorrect.',
-        'network-request-failed': 'Vérifie ta connexion Internet.',
-      };
-      if (mounted) {
-        setState(() => error = messages[e.code] ?? 'Erreur : ${e.message}');
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => error = e.toString().replaceFirst('Exception: ', ''));
-      }
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
+  void showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   @override
@@ -250,220 +279,287 @@ class _LoginPageState extends State<LoginPage> {
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              children: [
-                const Icon(Icons.bolt, size: 76, color: purple),
-                const SizedBox(height: 8),
-                const Text(
-                  'SquadVibe',
-                  style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold),
-                ),
-                const Text(
-                  'Ta squad. Ton univers.',
-                  style: TextStyle(color: Colors.white60),
-                ),
-                const SizedBox(height: 32),
-                if (registering) ...[
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: Column(
+                children: [
+                  const Brand(),
+                  const SizedBox(height: 42),
+                  Text(
+                    createAccount
+                        ? 'Rejoins ta squad.'
+                        : 'Content de te revoir.',
+                    style: const TextStyle(
+                      fontSize: 25,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  if (createAccount) ...[
+                    TextField(
+                      controller: username,
+                      textCapitalization: TextCapitalization.none,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.person_outline),
+                        hintText: 'Pseudo unique',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   TextField(
-                    controller: pseudo,
+                    controller: email,
+                    keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
                     decoration: const InputDecoration(
-                      labelText: 'Pseudo unique',
-                      prefixIcon: Icon(Icons.alternate_email),
+                      prefixIcon: Icon(Icons.email_outlined),
+                      hintText: 'Adresse e-mail',
                     ),
                   ),
                   const SizedBox(height: 14),
-                ],
-                TextField(
-                  controller: email,
-                  keyboardType: TextInputType.emailAddress,
-                  autocorrect: false,
-                  decoration: const InputDecoration(
-                    labelText: 'Adresse email',
-                    prefixIcon: Icon(Icons.email_outlined),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: password,
-                  obscureText: hidePassword,
-                  decoration: InputDecoration(
-                    labelText: 'Mot de passe',
-                    prefixIcon: const Icon(Icons.lock_outline),
-                    suffixIcon: IconButton(
-                      onPressed: () =>
-                          setState(() => hidePassword = !hidePassword),
-                      icon: Icon(hidePassword
-                          ? Icons.visibility
-                          : Icons.visibility_off),
+                  TextField(
+                    controller: password,
+                    obscureText: !showPassword,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      hintText: 'Mot de passe',
+                      suffixIcon: IconButton(
+                        onPressed: () => setState(
+                          () => showPassword = !showPassword,
+                        ),
+                        icon: Icon(
+                          showPassword
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                        ),
+                      ),
                     ),
                   ),
-                  onSubmitted: (_) {
-                    if (!loading) submit();
-                  },
-                ),
-                if (!registering)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: loading ? null : resetPassword,
-                      child: const Text('Mot de passe oublié ?'),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: purple,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      onPressed: loading ? null : submit,
+                      child: loading
+                          ? const CircularProgressIndicator()
+                          : Text(
+                              createAccount
+                                  ? 'Créer mon compte'
+                                  : 'Se connecter',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                     ),
                   ),
-                if (error.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  Text(
-                    error,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.redAccent),
+                  TextButton(
+                    onPressed: loading
+                        ? null
+                        : () => setState(
+                              () => createAccount = !createAccount,
+                            ),
+                    child: Text(
+                      createAccount
+                          ? 'J’ai déjà un compte'
+                          : 'Créer un compte',
+                      style: const TextStyle(color: purple),
+                    ),
                   ),
                 ],
-                const SizedBox(height: 18),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: FilledButton(
-                    onPressed: loading ? null : submit,
-                    child: loading
-                        ? const SizedBox(
-                            height: 22,
-                            width: 22,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(registering ? 'Créer mon compte' : 'Connexion'),
-                  ),
-                ),
-                TextButton(
-                  onPressed: loading
-                      ? null
-                      : () => setState(() {
-                            registering = !registering;
-                            error = '';
-                          }),
-                  child: Text(registering
-                      ? 'Déjà inscrit ? Se connecter'
-                      : 'Créer un compte gratuitement'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int selectedIndex = 0;
+
+  Future<void> signOut() async {
+    await FirebaseAuth.instance.signOut();
+    // AuthGate affichera automatiquement l'écran de connexion.
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser!;
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data();
+        final pseudo = data?['username'] as String? ??
+            user.displayName ??
+            user.email?.split('@').first ??
+            'Joueur';
+
+        final pages = <Widget>[
+          HomeContent(username: pseudo),
+          const PlaceholderPage(
+            title: 'Amis',
+            subtitle: 'Retrouve ta squad.',
+            icon: Icons.people_outline,
+          ),
+          const PlaceholderPage(
+            title: 'Messages',
+            subtitle: 'Tes conversations au même endroit.',
+            icon: Icons.chat_bubble_outline,
+          ),
+          ProfileContent(
+            username: pseudo,
+            email: user.email ?? '',
+            onSignOut: signOut,
+          ),
+        ];
+
+        return Scaffold(
+          appBar: AppBar(
+            title: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.bolt, color: purple),
+                SizedBox(width: 8),
+                Text(
+                  'SQUADVIBE',
+                  style: TextStyle(fontWeight: FontWeight.w900),
                 ),
               ],
             ),
+            centerTitle: true,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// -------------------- NAVIGATION PRINCIPALE --------------------
-
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
-
-  @override
-  State<HomePage> createState() => _HomePageState();
-}
-
-class _HomePageState extends State<HomePage> {
-  int selected = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    const pages = [
-      DashboardTab(),
-      FriendsTab(),
-      MessagesTab(),
-      ProfileTab(),
-    ];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'SquadVibe ⚡',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        backgroundColor: background,
-      ),
-      body: IndexedStack(index: selected, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selected,
-        onDestinationSelected: (i) => setState(() => selected = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            label: 'Accueil',
+          body: SafeArea(
+            child: IndexedStack(
+              index: selectedIndex,
+              children: pages,
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            label: 'Amis',
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: selectedIndex,
+            onDestinationSelected: (index) {
+              setState(() => selectedIndex = index);
+            },
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'Accueil',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.people_outline),
+                selectedIcon: Icon(Icons.people),
+                label: 'Amis',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.chat_bubble_outline),
+                selectedIcon: Icon(Icons.chat_bubble),
+                label: 'Messages',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.person_outline),
+                selectedIcon: Icon(Icons.person),
+                label: 'Profil',
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            label: 'Messages',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            label: 'Profil',
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class DashboardTab extends StatelessWidget {
-  const DashboardTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final me = auth.currentUser!;
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: db.collection('users').doc(me.uid).snapshots(),
-      builder: (context, snapshot) {
-        final name = snapshot.data?.data()?['pseudo'] ?? 'Joueur';
-
-        return ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text(
-              'Salut $name 👋',
-              style: const TextStyle(fontSize: 27, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Retrouve tes amis et discute avec ta squad.',
-              style: TextStyle(color: Colors.white60),
-            ),
-            const SizedBox(height: 24),
-            const _FeatureCard(
-              icon: Icons.people,
-              title: 'Ta communauté',
-              subtitle: 'Recherche des joueurs et ajoute tes amis.',
-            ),
-            const SizedBox(height: 14),
-            const _FeatureCard(
-              icon: Icons.chat,
-              title: 'Messages privés',
-              subtitle: 'Discute en direct avec tes amis.',
-            ),
-            const SizedBox(height: 14),
-            const _FeatureCard(
-              icon: Icons.shield,
-              title: 'SquadVibe',
-              subtitle: 'Ton espace pour retrouver tes joueurs.',
-            ),
-          ],
         );
       },
     );
   }
 }
 
-class _FeatureCard extends StatelessWidget {
+class HomeContent extends StatelessWidget {
+  final String username;
+
+  const HomeContent({super.key, required this.username});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF9B5CFF), Color(0xFF5426A8)],
+            ),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.bolt, size: 34),
+              const SizedBox(height: 12),
+              Text(
+                'Salut $username !',
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text('Ta squad, tes amis, ton univers. 🚀'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 30),
+        const Text(
+          'TON ESPACE',
+          style: TextStyle(
+            color: muted,
+            letterSpacing: 2,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 14),
+        const FeatureTile(
+          icon: Icons.people_alt_outlined,
+          title: 'Trouve ta squad',
+          subtitle: 'Recherche des joueurs et développe ton réseau.',
+        ),
+        const FeatureTile(
+          icon: Icons.chat_outlined,
+          title: 'Reste connecté',
+          subtitle: 'Retrouve tes conversations au même endroit.',
+        ),
+        const FeatureTile(
+          icon: Icons.shield_outlined,
+          title: 'Ton compte',
+          subtitle: 'Gère ton profil et tes informations.',
+        ),
+      ],
+    );
+  }
+}
+
+class FeatureTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
 
-  const _FeatureCard({
+  const FeatureTile({
+    super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
@@ -471,788 +567,144 @@ class _FeatureCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: panel,
-      child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
-        leading: CircleAvatar(
-          backgroundColor: purple.withOpacity(0.2),
-          child: Icon(icon, color: purple),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 5),
-          child: Text(subtitle),
-        ),
-      ),
-    );
-  }
-}
-
-// -------------------- AMIS ET DEMANDES --------------------
-
-class FriendsTab extends StatefulWidget {
-  const FriendsTab({super.key});
-
-  @override
-  State<FriendsTab> createState() => _FriendsTabState();
-}
-
-class _FriendsTabState extends State<FriendsTab> {
-  final search = TextEditingController();
-  String noticeText = '';
-  bool sending = false;
-
-  @override
-  void dispose() {
-    search.dispose();
-    super.dispose();
-  }
-
-  Future<void> sendRequest(String targetUid) async {
-    final me = auth.currentUser!;
-    if (sending) return;
-
-    if (targetUid == me.uid) {
-      setState(() => noticeText = 'Tu ne peux pas t’ajouter toi-même.');
-      return;
-    }
-
-    setState(() {
-      sending = true;
-      noticeText = '';
-    });
-
-    try {
-      final outgoingId = '${me.uid}_$targetUid';
-      final incomingId = '${targetUid}_${me.uid}';
-      final outgoing = db.collection('friendRequests').doc(outgoingId);
-      final incoming = db.collection('friendRequests').doc(incomingId);
-
-      final results = await Future.wait([outgoing.get(), incoming.get()]);
-      if (results[0].exists || results[1].exists) {
-        throw Exception('Une demande existe déjà ou a déjà été traitée.');
-      }
-
-      await outgoing.set({
-        'senderUid': me.uid,
-        'receiverUid': targetUid,
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      if (mounted) setState(() => noticeText = 'Demande envoyée !');
-    } catch (e) {
-      if (mounted) {
-        setState(() => noticeText =
-            e.toString().contains('Exception:')
-                ? e.toString().replaceFirst('Exception: ', '')
-                : 'Envoi impossible. Vérifie les règles Firestore.');
-      }
-    } finally {
-      if (mounted) setState(() => sending = false);
-    }
-  }
-
-  Future<void> answerRequest(
-    QueryDocumentSnapshot<Map<String, dynamic>> request,
-    bool accept,
-  ) async {
-    final me = auth.currentUser!;
-    final data = request.data();
-    final senderUid = data['senderUid'] as String?;
-
-    if (senderUid == null) return;
-
-    try {
-      if (!accept) {
-        await request.reference.update({'status': 'declined'});
-        if (mounted) notice(context, 'Demande refusée.');
-        return;
-      }
-
-      await db.runTransaction((tx) async {
-        final requestRef = request.reference;
-        final freshRequest = await tx.get(requestRef);
-
-        if (!freshRequest.exists ||
-            freshRequest.data()?['receiverUid'] != me.uid ||
-            freshRequest.data()?['status'] != 'pending') {
-          throw Exception('Cette demande n’est plus disponible.');
-        }
-
-        final meRef = db.collection('users').doc(me.uid);
-        final senderRef = db.collection('users').doc(senderUid);
-        final meSnap = await tx.get(meRef);
-        final senderSnap = await tx.get(senderRef);
-
-        final myName = meSnap.data()?['pseudo'] ?? 'Joueur';
-        final senderName = senderSnap.data()?['pseudo'] ?? 'Joueur';
-
-        tx.update(requestRef, {'status': 'accepted'});
-
-        tx.set(
-          db.collection('friends').doc(me.uid)
-              .collection('contacts').doc(senderUid),
-          {
-            'uid': senderUid,
-            'pseudo': senderName,
-            'createdAt': FieldValue.serverTimestamp(),
-          },
-        );
-
-        tx.set(
-          db.collection('friends').doc(senderUid)
-              .collection('contacts').doc(me.uid),
-          {
-            'uid': me.uid,
-            'pseudo': myName,
-            'createdAt': FieldValue.serverTimestamp(),
-          },
-        );
-      });
-
-      if (mounted) notice(context, 'Ami ajouté !');
-    } catch (_) {
-      if (mounted) {
-        notice(context, 'Action impossible. Vérifie les règles Firestore.');
-      }
-    }
-  }
-
-  void openChat(String uid, String pseudo) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatPage(peerUid: uid, peerPseudo: pseudo),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final me = auth.currentUser!;
-
-    return ListView(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(20),
-      children: [
-        const Text(
-          'Trouve ta squad',
-          style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        const Text('Recherche un joueur avec son pseudo exact.'),
-        const SizedBox(height: 16),
-        TextField(
-          controller: search,
-          autocorrect: false,
-          onChanged: (_) => setState(() {}),
-          decoration: const InputDecoration(
-            hintText: 'Pseudo du joueur',
-            prefixIcon: Icon(Icons.search),
-          ),
-        ),
-        if (search.text.trim().isNotEmpty) ...[
-          const SizedBox(height: 12),
-          FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            key: ValueKey(search.text.trim().toLowerCase()),
-            future: db.collection('usernames')
-                .doc(search.text.trim().toLowerCase()).get(),
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snap.hasError) {
-                return const Text('Erreur de recherche Firestore.');
-              }
-              if (!snap.hasData || !snap.data!.exists) {
-                return const Text('Aucun joueur trouvé.');
-              }
-
-              final uid = snap.data!.data()?['uid'] as String?;
-              if (uid == null || uid == me.uid) {
-                return const Text('C’est ton propre pseudo.');
-              }
-
-              return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                future: db.collection('users').doc(uid).get(),
-                builder: (context, player) {
-                  final name = player.data?.data()?['pseudo'] as String?
-                      ?? search.text.trim();
-
-                  return Card(
-                    color: panel,
-                    child: ListTile(
-                      leading: const CircleAvatar(
-                        child: Icon(Icons.person),
-                      ),
-                      title: Text(name),
-                      subtitle: const Text('Joueur SquadVibe'),
-                      trailing: IconButton(
-                        onPressed: sending ? null : () => sendRequest(uid),
-                        icon: const Icon(Icons.person_add, color: purple),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ],
-        if (noticeText.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text(noticeText),
-        ],
-        const SizedBox(height: 28),
-        const Text(
-          'Demandes reçues',
-          style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 10),
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: db.collection('friendRequests')
-              .where('receiverUid', isEqualTo: me.uid)
-              .where('status', isEqualTo: 'pending')
-              .snapshots(),
-          builder: (context, snap) {
-            if (snap.hasError) {
-              return const Text('Erreur des demandes. Vérifie Firestore.');
-            }
-            if (!snap.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.data!.docs.isEmpty) {
-              return const Text('Aucune demande pour le moment.');
-            }
-
-            return Column(
-              children: snap.data!.docs.map((request) {
-                final senderUid = request.data()['senderUid'] as String;
-                return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  future: db.collection('users').doc(senderUid).get(),
-                  builder: (context, userSnap) {
-                    final name =
-                        userSnap.data?.data()?['pseudo'] ?? 'Joueur';
-                    return Card(
-                      color: panel,
-                      child: ListTile(
-                        leading: const CircleAvatar(
-                          child: Icon(Icons.person_outline),
-                        ),
-                        title: Text(name),
-                        subtitle: const Text('Demande d’ami'),
-                        trailing: Wrap(
-                          children: [
-                            IconButton(
-                              tooltip: 'Accepter',
-                              onPressed: () => answerRequest(request, true),
-                              icon: const Icon(
-                                Icons.check_circle,
-                                color: Colors.green,
-                              ),
-                            ),
-                            IconButton(
-                              tooltip: 'Refuser',
-                              onPressed: () => answerRequest(request, false),
-                              icon: const Icon(
-                                Icons.cancel,
-                                color: Colors.redAccent,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
-              }).toList(),
-            );
-          },
-        ),
-        const SizedBox(height: 28),
-        const Text(
-          'Mes amis',
-          style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 10),
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: db.collection('friends').doc(me.uid)
-              .collection('contacts').snapshots(),
-          builder: (context, snap) {
-            if (snap.hasError) {
-              return const Text('Erreur lors du chargement des amis.');
-            }
-            if (!snap.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snap.data!.docs.isEmpty) {
-              return const Text('Tes amis apparaîtront ici après acceptation.');
-            }
-
-            return Column(
-              children: snap.data!.docs.map((doc) {
-                final data = doc.data();
-                final uid = data['uid'] as String? ?? doc.id;
-                final name = data['pseudo'] as String? ?? 'Joueur';
-
-                return Card(
-                  color: panel,
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      child: Icon(Icons.person, color: purple),
-                    ),
-                    title: Text(name),
-                    subtitle: const Text('Ami'),
-                    trailing: IconButton(
-                      tooltip: 'Envoyer un message',
-                      icon: const Icon(Icons.chat_bubble, color: purple),
-                      onPressed: () => openChat(uid, name),
-                    ),
-                    onTap: () => openChat(uid, name),
-                  ),
-                );
-              }).toList(),
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-// -------------------- LISTE DES CONVERSATIONS --------------------
-
-class MessagesTab extends StatelessWidget {
-  const MessagesTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final me = auth.currentUser!;
-
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: db.collection('chats')
-          .where('members', arrayContains: me.uid)
-          .snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('Impossible de charger les messages. Vérifie Firestore.'),
-            ),
-          );
-        }
-        if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (snap.data!.docs.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.chat_bubble_outline, size: 56, color: purple),
-                  SizedBox(height: 14),
-                  Text(
-                    'Aucune conversation',
-                    style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Ajoute un ami, puis appuie sur son icône de message.',
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        final docs = [...snap.data!.docs];
-        docs.sort((a, b) {
-          final aTime = a.data()['updatedAt'] as Timestamp?;
-          final bTime = b.data()['updatedAt'] as Timestamp?;
-          return (bTime?.millisecondsSinceEpoch ?? 0)
-              .compareTo(aTime?.millisecondsSinceEpoch ?? 0);
-        });
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(bottom: 12),
-              child: Text(
-                'Messages',
-                style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-              ),
-            ),
-            ...docs.map((doc) {
-              final data = doc.data();
-              final names = Map<String, dynamic>.from(
-                data['memberNames'] ?? {},
-              );
-              final otherUid = (data['members'] as List)
-                  .cast<String>()
-                  .firstWhere((id) => id != me.uid, orElse: () => '');
-              final name = names[otherUid] ?? 'Conversation';
-
-              return Card(
-                color: panel,
-                child: ListTile(
-                  leading: const CircleAvatar(
-                    child: Icon(Icons.person, color: purple),
-                  ),
-                  title: Text(name.toString()),
-                  subtitle: Text(
-                    (data['lastMessage'] as String?) ?? 'Démarrer la discussion',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ChatPage(
-                          peerUid: otherUid,
-                          peerPseudo: name.toString(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              );
-            }),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// -------------------- CONVERSATION PRIVÉE EN TEMPS RÉEL --------------------
-
-class ChatPage extends StatefulWidget {
-  final String peerUid;
-  final String peerPseudo;
-
-  const ChatPage({
-    super.key,
-    required this.peerUid,
-    required this.peerPseudo,
-  });
-
-  @override
-  State<ChatPage> createState() => _ChatPageState();
-}
-
-class _ChatPageState extends State<ChatPage> {
-  final input = TextEditingController();
-  final scroll = ScrollController();
-  bool loading = true;
-  bool sending = false;
-  String? failure;
-
-  User get me => auth.currentUser!;
-  String get conversationId => chatIdFor(me.uid, widget.peerUid);
-  DocumentReference<Map<String, dynamic>> get chatRef =>
-      db.collection('chats').doc(conversationId);
-
-  @override
-  void initState() {
-    super.initState();
-    prepareChat();
-  }
-
-  @override
-  void dispose() {
-    input.dispose();
-    scroll.dispose();
-    super.dispose();
-  }
-
-  Future<void> prepareChat() async {
-    try {
-      final myProfile = await db.collection('users').doc(me.uid).get();
-      final myName = myProfile.data()?['pseudo'] ?? 'Joueur';
-      final existing = await chatRef.get();
-
-      if (!existing.exists) {
-        final members = [me.uid, widget.peerUid]..sort();
-        await chatRef.set({
-          'members': members,
-          'memberNames': {
-            me.uid: myName,
-            widget.peerUid: widget.peerPseudo,
-          },
-          'lastMessage': '',
-          'createdAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      } else {
-        final data = existing.data()!;
-        final members = List<String>.from(data['members'] ?? []);
-        if (!members.contains(me.uid) || !members.contains(widget.peerUid)) {
-          throw Exception('Conversation non autorisée.');
-        }
-      }
-    } catch (_) {
-      failure = 'Impossible d’ouvrir la conversation. Vérifie les règles Firestore.';
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
-  }
-
-  Future<void> sendMessage() async {
-    final text = input.text.trim();
-    if (text.isEmpty || sending || failure != null) return;
-    if (text.length > 2000) {
-      notice(context, 'Message trop long : 2 000 caractères maximum.');
-      return;
-    }
-
-    setState(() => sending = true);
-    input.clear();
-
-    try {
-      final batch = db.batch();
-      final messageRef = chatRef.collection('messages').doc();
-
-      batch.set(messageRef, {
-        'senderUid': me.uid,
-        'text': text,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-
-      batch.update(chatRef, {
-        'lastMessage': text,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      await batch.commit();
-
-      if (mounted) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (scroll.hasClients) {
-            scroll.animateTo(
-              0,
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOut,
-            );
-          }
-        });
-      }
-    } catch (_) {
-      input.text = text;
-      if (mounted) {
-        notice(context, 'Message non envoyé. Vérifie les règles Firestore.');
-      }
-    } finally {
-      if (mounted) setState(() => sending = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            const CircleAvatar(
-              radius: 17,
-              child: Icon(Icons.person, size: 20),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                widget.peerPseudo,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: background,
+      decoration: BoxDecoration(
+        color: panel,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: purple.withValues(alpha: 0.2)),
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : failure != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(failure!, textAlign: TextAlign.center),
-                  ),
-                )
-              : Column(
-                  children: [
-                    Expanded(
-                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: chatRef.collection('messages')
-                            .orderBy('createdAt', descending: true)
-                            .limit(200)
-                            .snapshots(),
-                        builder: (context, snap) {
-                          if (snap.hasError) {
-                            return const Center(
-                              child: Text('Erreur de chargement des messages.'),
-                            );
-                          }
-                          if (!snap.hasData) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-                          if (snap.data!.docs.isEmpty) {
-                            return const Center(
-                              child: Text('Envoie le premier message 👋'),
-                            );
-                          }
-
-                          return ListView.builder(
-                            controller: scroll,
-                            reverse: true,
-                            padding: const EdgeInsets.all(16),
-                            itemCount: snap.data!.docs.length,
-                            itemBuilder: (context, index) {
-                              final message = snap.data!.docs[index].data();
-                              final mine = message['senderUid'] == me.uid;
-                              final time = message['createdAt'] as Timestamp?;
-                              final timeText = time == null
-                                  ? ''
-                                  : '${time.toDate().hour.toString().padLeft(2, '0')}:'
-                                    '${time.toDate().minute.toString().padLeft(2, '0')}';
-
-                              return Align(
-                                alignment: mine
-                                    ? Alignment.centerRight
-                                    : Alignment.centerLeft,
-                                child: Container(
-                                  constraints: BoxConstraints(
-                                    maxWidth: MediaQuery.of(context).size.width * 0.78,
-                                  ),
-                                  margin: const EdgeInsets.symmetric(vertical: 5),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 10,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: mine ? purple : panel,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(message['text'] ?? ''),
-                                      if (timeText.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          timeText,
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                    SafeArea(
-                      top: false,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: input,
-                                minLines: 1,
-                                maxLines: 5,
-                                maxLength: 2000,
-                                decoration: const InputDecoration(
-                                  hintText: 'Écris un message...',
-                                  counterText: '',
-                                ),
-                                onSubmitted: (_) => sendMessage(),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton.filled(
-                              onPressed: sending ? null : sendMessage,
-                              icon: sending
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.send),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-    );
-  }
-}
-
-// -------------------- PROFIL --------------------
-
-class ProfileTab extends StatelessWidget {
-  const ProfileTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final user = auth.currentUser!;
-
-    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      stream: db.collection('users').doc(user.uid).snapshots(),
-      builder: (context, snap) {
-        final data = snap.data?.data();
-
-        return Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
+      child: Row(
+        children: [
+          Icon(icon, color: purple, size: 30),
+          const SizedBox(width: 16),
+          Expanded(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const CircleAvatar(
-                  radius: 42,
-                  backgroundColor: purple,
-                  child: Icon(Icons.person, size: 46),
-                ),
-                const SizedBox(height: 16),
                 Text(
-                  data?['pseudo'] ?? 'Joueur',
-                  style: const TextStyle(
-                    fontSize: 25,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
-                Text(user.email ?? ''),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await auth.signOut();
-                    },
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Se déconnecter'),
-                  ),
-                ),
+                const SizedBox(height: 6),
+                Text(subtitle, style: const TextStyle(color: muted)),
               ],
             ),
           ),
-        );
-      },
+        ],
+      ),
+    );
+  }
+}
+
+class PlaceholderPage extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  const PlaceholderPage({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: purple, size: 58),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(subtitle, style: const TextStyle(color: muted)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ProfileContent extends StatelessWidget {
+  final String username;
+  final String email;
+  final Future<void> Function() onSignOut;
+
+  const ProfileContent({
+    super.key,
+    required this.username,
+    required this.email,
+    required this.onSignOut,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const Icon(Icons.account_circle, color: purple, size: 100),
+        const SizedBox(height: 12),
+        Text(
+          username,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 26,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          email,
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: muted),
+        ),
+        const SizedBox(height: 30),
+        const Text(
+          'Informations du compte',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+        ),
+        const SizedBox(height: 14),
+        ListTile(
+          tileColor: panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          leading: const Icon(Icons.person_outline, color: purple),
+          title: const Text('Pseudo'),
+          subtitle: Text(username),
+        ),
+        const SizedBox(height: 12),
+        ListTile(
+          tileColor: panel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          leading: const Icon(Icons.email_outlined, color: purple),
+          title: const Text('E-mail'),
+          subtitle: Text(email),
+        ),
+        const SizedBox(height: 28),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.redAccent,
+            padding: const EdgeInsets.all(16),
+          ),
+          onPressed: onSignOut,
+          icon: const Icon(Icons.logout),
+          label: const Text('Se déconnecter'),
+        ),
+      ],
     );
   }
 }
