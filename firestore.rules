@@ -124,6 +124,83 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
+    // WebRTC call signaling. Only the two call participants can access it.
+    match /calls/{callId} {
+      function isParticipant() {
+        return signedIn()
+          && (resource.data.callerUid == request.auth.uid
+            || resource.data.calleeUid == request.auth.uid);
+      }
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'callerUid', 'calleeUid', 'callerName', 'calleeName',
+          'type', 'status', 'createdAt'
+        ])
+        && request.resource.data.callerUid == request.auth.uid
+        && request.resource.data.calleeUid is string
+        && request.resource.data.calleeUid != request.auth.uid
+        && request.resource.data.callerName is string
+        && request.resource.data.calleeName is string
+        && request.resource.data.type in ['audio', 'video']
+        && request.resource.data.status == 'ringing'
+        && (
+          exists(/databases/$(database)/documents/friends/$(request.auth.uid)/contacts/$(request.resource.data.calleeUid))
+          || exists(/databases/$(database)/documents/friends/$(request.resource.data.calleeUid)/contacts/$(request.auth.uid))
+        );
+
+      allow read: if isParticipant();
+
+      allow update: if isParticipant()
+        && request.resource.data.callerUid == resource.data.callerUid
+        && request.resource.data.calleeUid == resource.data.calleeUid
+        && request.resource.data.type == resource.data.type
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['offer', 'answer', 'status'])
+        && (
+          (request.auth.uid == resource.data.callerUid
+            && resource.data.status == 'ringing'
+            && request.resource.data.status == 'ringing'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['offer']))
+          ||
+          (request.auth.uid == resource.data.calleeUid
+            && resource.data.status == 'ringing'
+            && request.resource.data.status == 'accepted'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer', 'status']))
+          ||
+          (request.auth.uid == resource.data.calleeUid
+            && resource.data.status == 'ringing'
+            && request.resource.data.status == 'rejected'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+          ||
+          (request.resource.data.status == 'ended'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']))
+        );
+
+      allow delete: if false;
+
+      match /{candidateCollection}/{candidateId} {
+        allow read: if candidateCollection in ['callerCandidates', 'calleeCandidates']
+          && signedIn()
+          && (
+            get(/databases/$(database)/documents/calls/$(callId)).data.callerUid == request.auth.uid
+            || get(/databases/$(database)/documents/calls/$(callId)).data.calleeUid == request.auth.uid
+          );
+
+        allow create: if candidateCollection in ['callerCandidates', 'calleeCandidates']
+          && signedIn()
+          && (
+            get(/databases/$(database)/documents/calls/$(callId)).data.callerUid == request.auth.uid
+            || get(/databases/$(database)/documents/calls/$(callId)).data.calleeUid == request.auth.uid
+          )
+          && request.resource.data.keys().hasOnly(['candidate', 'sdpMid', 'sdpMLineIndex'])
+          && request.resource.data.candidate is string
+          && request.resource.data.sdpMid is string
+          && request.resource.data.sdpMLineIndex is int;
+
+        allow update, delete: if false;
+      }
+    }
+
     match /chats/{chatId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
 
