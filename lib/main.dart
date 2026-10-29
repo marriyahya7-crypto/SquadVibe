@@ -368,6 +368,146 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+
+  Future<void> signInWithPhone() async {
+    if (loading) return;
+
+    final phoneController = TextEditingController();
+    final codeController = TextEditingController();
+    String? verificationId;
+    bool codeSent = false;
+    bool sending = false;
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            backgroundColor: panel,
+            title: Text(codeSent ? 'Vérifie ton numéro' : 'Connexion par téléphone'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  codeSent
+                      ? 'Entre le code reçu par SMS.'
+                      : 'Entre ton numéro au format international, par exemple +33612345678.',
+                  style: const TextStyle(color: muted),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: codeSent ? codeController : phoneController,
+                  keyboardType: codeSent ? TextInputType.number : TextInputType.phone,
+                  autofillHints: codeSent ? const [AutofillHints.oneTimeCode] : const [AutofillHints.telephoneNumber],
+                  decoration: InputDecoration(
+                    prefixIcon: Icon(codeSent ? Icons.sms_outlined : Icons.phone_outlined),
+                    hintText: codeSent ? 'Code SMS' : '+33…',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: sending ? null : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: sending
+                    ? null
+                    : () async {
+                        if (!codeSent) {
+                          final phone = phoneController.text.trim();
+                          if (phone.isEmpty || !phone.startsWith('+')) {
+                            showMessage('Entre le numéro avec son indicatif, par exemple +33.');
+                            return;
+                          }
+                          setDialogState(() => sending = true);
+                          try {
+                            await FirebaseAuth.instance.verifyPhoneNumber(
+                              phoneNumber: phone,
+                              timeout: const Duration(seconds: 60),
+                              verificationCompleted: (PhoneAuthCredential credential) async {
+                                try {
+                                  final result = await FirebaseAuth.instance.signInWithCredential(credential);
+                                  await ensureSocialProfile(result.user);
+                                  if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                                } on FirebaseAuthException catch (e) {
+                                  showMessage(_socialAuthError(e));
+                                } catch (_) {
+                                  showMessage('Connexion par téléphone impossible. Réessaie.');
+                                }
+                              },
+                              verificationFailed: (FirebaseAuthException e) {
+                                if (dialogContext.mounted) {
+                                  setDialogState(() => sending = false);
+                                }
+                                showMessage(e.code == 'invalid-phone-number'
+                                    ? 'Le numéro de téléphone est invalide.'
+                                    : e.code == 'too-many-requests'
+                                        ? 'Trop de tentatives. Réessaie plus tard.'
+                                        : 'Envoi du SMS impossible (${e.code}). Vérifie Firebase.');
+                              },
+                              codeSent: (String id, int? resendToken) {
+                                verificationId = id;
+                                if (dialogContext.mounted) {
+                                  setDialogState(() {
+                                    codeSent = true;
+                                    sending = false;
+                                  });
+                                }
+                              },
+                              codeAutoRetrievalTimeout: (String id) {
+                                verificationId = id;
+                              },
+                            );
+                          } catch (_) {
+                            showMessage('Impossible d’envoyer le SMS. Vérifie ta connexion et la configuration Firebase.');
+                          } finally {
+                            if (dialogContext.mounted && sending) {
+                              setDialogState(() => sending = false);
+                            }
+                          }
+                        } else {
+                          final smsCode = codeController.text.trim();
+                          if (verificationId == null || smsCode.isEmpty) {
+                            showMessage('Entre le code reçu par SMS.');
+                            return;
+                          }
+                          setDialogState(() => sending = true);
+                          try {
+                            final credential = PhoneAuthProvider.credential(
+                              verificationId: verificationId!,
+                              smsCode: smsCode,
+                            );
+                            final result = await FirebaseAuth.instance.signInWithCredential(credential);
+                            await ensureSocialProfile(result.user);
+                            if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+                          } on FirebaseAuthException catch (e) {
+                            showMessage(e.code == 'invalid-verification-code'
+                                ? 'Code incorrect. Vérifie le SMS et réessaie.'
+                                : _socialAuthError(e));
+                          } catch (_) {
+                            showMessage('Connexion par téléphone impossible. Réessaie.');
+                          } finally {
+                            if (dialogContext.mounted) setDialogState(() => sending = false);
+                          }
+                        }
+                      },
+                child: sending
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Text(codeSent ? 'Vérifier le code' : 'Envoyer le SMS'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      phoneController.dispose();
+      codeController.dispose();
+    }
+  }
+
   Future<void> signInWithGoogle() async {
     if (loading) return;
     setState(() => loading = true);
@@ -632,6 +772,21 @@ class _LoginScreenState extends State<LoginScreen> {
                         icon: const Icon(Icons.apple, size: 25),
                         label: const Text('Continuer avec Apple'),
                         style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFF443A55)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: loading ? null : signInWithPhone,
+                        icon: const Icon(Icons.phone_android_rounded, size: 23),
+                        label: const Text('Continuer avec téléphone'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFF443A55)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                        ),
                       ),
                     ),
                   ],
