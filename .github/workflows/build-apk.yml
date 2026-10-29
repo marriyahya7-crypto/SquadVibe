@@ -81,8 +81,8 @@ jobs:
                   )
               if "coreLibraryDesugaring(" not in source:
                   source, count = re.subn(
-                      r"dependencies\\s*\\{",
-                      'dependencies {\\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',
+                      r"dependencies\s*\{",
+                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',
                       source,
                       count=1
                   )
@@ -97,8 +97,8 @@ jobs:
                   )
               if "coreLibraryDesugaring" not in source:
                   source, count = re.subn(
-                      r"dependencies\\s*\\{",
-                      "dependencies {\\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'",
+                      r"dependencies\s*\{",
+                      "dependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'",
                       source,
                       count=1
                   )
