@@ -1415,6 +1415,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
 
 class NitroContent extends StatelessWidget {
   const NitroContent({super.key});
+
   @override
   Widget build(BuildContext context) {
     return ListView(
@@ -1423,45 +1424,124 @@ class NitroContent extends StatelessWidget {
         Container(
           padding: const EdgeInsets.all(25),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFD978), Color(0xFFB46CFF), Color(0xFF5829B8)]),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFFFD978), Color(0xFFB46CFF), Color(0xFF5829B8)],
+            ),
             borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFB46CFF).withValues(alpha: 0.20),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(30)), child: const Text('✦ SQUADVIBE NITRO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.3))),
-            const SizedBox(height: 20),
-            const Text('Ta squad,\nton style.', style: TextStyle(fontSize: 34, height: 1.05, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 10),
-            const Text('Une expérience plus personnalisée, pensée pour toi.', style: TextStyle(fontSize: 14)),
-            const SizedBox(height: 20),
-            const Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              Text('1,99 €', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
-              Padding(padding: EdgeInsets.only(bottom: 5, left: 5), child: Text('/ mois', style: TextStyle(fontWeight: FontWeight.w600))),
-            ]),
-          ]),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: const Text(
+                  '✦ SQUADVIBE NITRO',
+                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.3),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Ta squad,\nton style.',
+                style: TextStyle(fontSize: 34, height: 1.05, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Personnalise ton profil et fais ressortir ta vibe.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 20),
+              const Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('1,99 €', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 5, left: 5),
+                    child: Text('/ mois', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              const Text('Prix envisagé · aucun paiement activé', style: TextStyle(fontSize: 11)),
+            ],
+          ),
         ),
         const SizedBox(height: 24),
-        const Text('LES AVANTAGES NITRO', style: TextStyle(color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w800, fontSize: 12)),
+        const Text(
+          'LES AVANTAGES NITRO',
+          style: TextStyle(color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w800, fontSize: 12),
+        ),
         const SizedBox(height: 12),
-        const _NitroBenefit(icon: Icons.palette_outlined, title: 'Thèmes exclusifs', subtitle: 'Personnalise les couleurs de ton espace.'),
-        const _NitroBenefit(icon: Icons.workspace_premium_outlined, title: 'Badge Nitro', subtitle: 'Un badge spécial sur ton profil.'),
-        const _NitroBenefit(icon: Icons.auto_awesome_outlined, title: 'Profil mis en avant', subtitle: 'Affiche ton style dans la communauté.'),
-        const _NitroBenefit(icon: Icons.bolt, title: 'Accès aux nouveautés', subtitle: 'Découvre les prochaines options en avant-première.'),
+        const _NitroBenefit(
+          icon: Icons.face_retouching_natural,
+          title: 'Avatars animés',
+          subtitle: 'Donne plus de vie à ton profil.',
+        ),
+        const _NitroBenefit(
+          icon: Icons.auto_awesome,
+          title: 'Bannières animées',
+          subtitle: 'Des effets lumineux pour personnaliser ton profil.',
+        ),
+        const _NitroBenefit(
+          icon: Icons.workspace_premium_outlined,
+          title: 'Badge Nitro',
+          subtitle: 'Un badge spécial visible sur ton profil.',
+        ),
+        const _NitroBenefit(
+          icon: Icons.palette_outlined,
+          title: 'Couleurs et thèmes exclusifs',
+          subtitle: 'Choisis une ambiance qui te ressemble.',
+        ),
+        const _NitroBenefit(
+          icon: Icons.bolt,
+          title: 'Nouveautés en avant-première',
+          subtitle: 'Découvre certaines options avant leur arrivée pour tous.',
+        ),
         const SizedBox(height: 16),
         FilledButton.icon(
           onPressed: () => showDialog<void>(
             context: context,
-            builder: (context) => AlertDialog(
-              title: const Text('Nitro arrive bientôt ✨'),
-              content: const Text('L’offre et son prix sont présentés ici, mais le paiement n’est pas encore activé. Rien ne sera prélevé.'),
-              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Compris'))],
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Nitro n’est pas encore activé ✨'),
+              content: const Text(
+                'La page et les avantages sont préparés, mais aucun achat ne peut encore être effectué. '
+                'Tu ne seras pas débité. Le badge et les options premium ne seront activés qu’après '
+                'la mise en place d’un paiement sécurisé et la vérification de l’abonnement.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Compris'),
+                ),
+              ],
             ),
           ),
-          style: FilledButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
+          style: FilledButton.styleFrom(
+            backgroundColor: purple,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+          ),
           icon: const Icon(Icons.lock_clock),
           label: const Text('Bientôt disponible', style: TextStyle(fontWeight: FontWeight.w800)),
         ),
         const SizedBox(height: 10),
-        const Text('Aucun paiement actif pour le moment. Le prix affiché est une proposition.', textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 11)),
+        const Text(
+          'L’abonnement, les paiements et les avantages réels restent à connecter.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: muted, fontSize: 11),
+        ),
       ],
     );
   }
