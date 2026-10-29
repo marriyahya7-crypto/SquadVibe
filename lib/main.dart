@@ -73,10 +73,61 @@ class AuthGate extends StatelessWidget {
             final user = snapshot.data;
 
             if (user == null) return const LoginScreen();
-            return HomeScreen(key: ValueKey(user.uid));
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+              builder: (context, profileSnapshot) {
+                final profile = profileSnapshot.data?.data();
+                final untilValue = profile?['suspendedUntil'];
+                final until = untilValue is Timestamp ? untilValue.toDate() : null;
+                if (profile?['moderationStatus'] == 'suspended' &&
+                    until != null && until.isAfter(DateTime.now())) {
+                  return SuspendedScreen(until: until);
+                }
+                return HomeScreen(key: ValueKey(user.uid));
+              },
+            );
           },
         );
       },
+    );
+  }
+}
+
+class SuspendedScreen extends StatelessWidget {
+  final DateTime until;
+  const SuspendedScreen({super.key, required this.until});
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = until.difference(DateTime.now());
+    final days = (remaining.inHours / 24).ceil().clamp(1, 7);
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.gavel_rounded, color: Colors.redAccent, size: 64),
+                const SizedBox(height: 18),
+                const Text('Compte temporairement suspendu',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                Text('Après plusieurs signalements distincts, ton compte est suspendu pour vérification. Réessaie dans environ $days jour(s).',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: muted, height: 1.5)),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => FirebaseAuth.instance.signOut(),
+                  child: const Text('Se déconnecter'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
