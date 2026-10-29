@@ -28,38 +28,60 @@ void notice(BuildContext context, String message) {
   );
 }
 
-class SquadVibeApp extends StatelessWidget {
-  const SquadVibeApp({super.key});
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SquadVibe',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: background,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: purple,
-          brightness: Brightness.dark,
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: panel,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        navigationBarTheme: const NavigationBarThemeData(
-          backgroundColor: panel,
-          indicatorColor: Color(0xFF42266A),
-        ),
-      ),
-      home: const AuthGate(),
+    return StreamBuilder<User?>(
+      stream: auth.authStateChanges(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final user = snapshot.data;
+        if (user == null) return const LoginPage();
+
+        return StreamBuilder<
+            DocumentSnapshot<Map<String, dynamic>>>(
+          stream: db.collection('users').doc(user.uid).snapshots(),
+          builder: (context, profile) {
+            if (profile.connectionState ==
+                    ConnectionState.waiting ||
+                !profile.hasData) {
+              return const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            }
+
+            if (profile.hasError) {
+              return const Scaffold(
+                body: Center(
+                  child: Text(
+                    'Impossible de vérifier ton profil.',
+                  ),
+                ),
+              );
+            }
+
+            if (!profile.data!.exists) {
+              return const LoginPage();
+            }
+
+            return const HomePage();
+          },
+        );
+      },
     );
   }
 }
+
 
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
