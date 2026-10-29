@@ -28,6 +28,9 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid', 'username', 'createdAt'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.username is string
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameLower == username
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == request.resource.data.username
         && !exists(/databases/$(database)/documents/usernames/$(username));
       allow update, delete: if false;
     }
@@ -44,7 +47,10 @@ service cloud.firestore {
         && request.resource.data.usernameLower is string
         && request.resource.data.email is string
         && request.resource.data.bio is string
-        && request.resource.data.friends is list;
+        && request.resource.data.friends is list
+        && existsAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower))
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.uid == request.auth.uid
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.usernameLower)).data.username == request.resource.data.username;
       allow update, delete: if false;
     }
 
