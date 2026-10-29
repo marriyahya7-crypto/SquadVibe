@@ -173,8 +173,8 @@ class _CallScreenState extends State<CallScreen> {
       try {
         await _callRef!.collection(collection).add({
           'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
+          'sdpMid': candidate.sdpMid ?? '',
+          'sdpMLineIndex': candidate.sdpMLineIndex ?? 0,
         });
       } catch (_) {}
     };
