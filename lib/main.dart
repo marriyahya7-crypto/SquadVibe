@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'call_screen.dart';
+import 'notification_service.dart';
 
 const purple = Color(0xFF9B5CFF);
 const background = Color(0xFF100D19);
@@ -16,6 +17,7 @@ final ValueNotifier<bool> accountCreationInProgress = ValueNotifier<bool>(false)
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await NotificationService.initialize();
   runApp(const SquadVibeApp());
 }
 
@@ -493,6 +495,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int selectedIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    NotificationService.registerForCurrentUser();
+  }
 
   Future<void> signOut() async {
     await FirebaseAuth.instance.signOut();
