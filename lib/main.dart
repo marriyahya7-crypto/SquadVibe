@@ -1,3 +1,4 @@
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -304,7 +305,7 @@ class _LoginScreenState extends State<LoginScreen> {
         await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: mail,
           password: pass,
-        );
+        ).timeout(const Duration(seconds: 25));
       }
 
       // Ne pas naviguer manuellement vers l'accueil :
@@ -340,6 +341,8 @@ class _LoginScreenState extends State<LoginScreen> {
       } else {
         showMessage('Connexion/inscription impossible : ${e.message ?? e.code}');
       }
+    } on TimeoutException {
+      showMessage('Le serveur ne répond pas. Vérifie Internet puis réessaie.');
     } catch (e) {
       // Si la création du profil échoue après celle du compte,
       // on tente de supprimer le compte incomplet.
@@ -512,19 +515,30 @@ class _LoginScreenState extends State<LoginScreen> {
     if (loading) return;
     setState(() => loading = true);
     try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return;
-      final googleAuth = await googleUser.authentication;
+      final googleUser = await GoogleSignIn().signIn()
+          .timeout(const Duration(seconds: 25));
+      if (googleUser == null) {
+        showMessage('Connexion Google annulée.');
+        return;
+      }
+      final googleAuth = await googleUser.authentication
+          .timeout(const Duration(seconds: 15));
+      if (googleAuth.idToken == null && googleAuth.accessToken == null) {
+        throw StateError('Google n’a renvoyé aucun jeton. Vérifie la configuration OAuth Android dans Firebase.');
+      }
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
-      final result = await FirebaseAuth.instance.signInWithCredential(credential);
-      await ensureSocialProfile(result.user);
+      final result = await FirebaseAuth.instance.signInWithCredential(credential)
+          .timeout(const Duration(seconds: 25));
+      await ensureSocialProfile(result.user).timeout(const Duration(seconds: 15));
     } on FirebaseAuthException catch (e) {
       showMessage(_socialAuthError(e));
-    } catch (_) {
-      showMessage('Connexion Google impossible. Vérifie la configuration Firebase et réessaie.');
+    } on TimeoutException {
+      showMessage('La connexion Google a dépassé 25 secondes. Vérifie Internet et la configuration OAuth Android dans Firebase.');
+    } catch (e) {
+      showMessage('Connexion Google impossible : ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
       if (mounted) setState(() => loading = false);
     }
