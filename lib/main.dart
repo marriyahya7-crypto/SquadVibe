@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'call_screen.dart';
 
 const purple = Color(0xFF9B5CFF);
 const background = Color(0xFF100D19);
@@ -1043,21 +1044,55 @@ class _FriendsPageState extends State<FriendsPage> {
                     leading: const CircleAvatar(backgroundColor: purple, child: Icon(Icons.person)),
                     title: Text(friendName),
                     subtitle: const Text('Ami SquadVibe'),
-                    trailing: PopupMenuButton<String>(
-                      tooltip: 'Options de cet ami',
-                      onSelected: (value) {
-                        if (value == 'report') reportUser(friendUid, friendName);
-                      },
-                      itemBuilder: (context) => const [
-                        PopupMenuItem<String>(
-                          value: 'report',
-                          child: Row(
-                            children: [
-                              Icon(Icons.flag_outlined, size: 20),
-                              SizedBox(width: 10),
-                              Text('Signaler'),
-                            ],
+                    trailing: Wrap(
+                      spacing: 0,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        IconButton(
+                          tooltip: 'Appel vocal',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CallScreen(
+                                peerUid: friendUid,
+                                peerName: friendName,
+                                isCaller: true,
+                                isVideo: false,
+                              ),
+                            ),
                           ),
+                          icon: const Icon(Icons.call_outlined, color: Color(0xFF7DDBA3)),
+                        ),
+                        IconButton(
+                          tooltip: 'Appel vidéo',
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => CallScreen(
+                                peerUid: friendUid,
+                                peerName: friendName,
+                                isCaller: true,
+                                isVideo: true,
+                              ),
+                            ),
+                          ),
+                          icon: const Icon(Icons.videocam_outlined, color: purple),
+                        ),
+                        PopupMenuButton<String>(
+                          tooltip: 'Options de cet ami',
+                          onSelected: (value) {
+                            if (value == 'report') reportUser(friendUid, friendName);
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem<String>(
+                              value: 'report',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.flag_outlined, size: 20),
+                                  SizedBox(width: 10),
+                                  Text('Signaler'),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1118,6 +1153,74 @@ class MessagesPage extends StatelessWidget {
         const Text('MESSAGES', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
         const SizedBox(height: 6),
         const Text('Tes conversations privées, au même endroit.', style: TextStyle(color: muted)),
+        const SizedBox(height: 22),
+        const Text('APPELS ENTRANTS', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.2, fontSize: 12, color: muted)),
+        const SizedBox(height: 10),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: db.collection('calls')
+              .where('calleeUid', isEqualTo: me.uid)
+              .where('status', isEqualTo: 'ringing')
+              .snapshots(),
+          builder: (context, callSnap) {
+            if (callSnap.hasError) {
+              return const Text('Les appels entrants ne chargent pas. Vérifie les règles Firestore.', style: TextStyle(color: muted));
+            }
+            if (!callSnap.hasData || callSnap.data!.docs.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.all(15),
+                decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(16)),
+                child: const Row(children: [
+                  Icon(Icons.call_missed_outgoing, color: muted),
+                  SizedBox(width: 10),
+                  Expanded(child: Text('Aucun appel entrant pour le moment.', style: TextStyle(color: muted))),
+                ]),
+              );
+            }
+            return Column(children: callSnap.data!.docs.map((callDoc) {
+              final call = callDoc.data();
+              final callerUid = call['callerUid'] as String? ?? '';
+              final callerName = call['callerName'] as String? ?? 'Ami SquadVibe';
+              final isVideo = call['type'] == 'video';
+              return Card(
+                color: panel,
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: purple.withValues(alpha: 0.2),
+                    child: Icon(isVideo ? Icons.videocam : Icons.call, color: purple),
+                  ),
+                  title: Text(callerName, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  subtitle: Text(isVideo ? 'Appel vidéo entrant' : 'Appel vocal entrant'),
+                  trailing: Wrap(
+                    spacing: 0,
+                    children: [
+                      IconButton(
+                        tooltip: 'Refuser',
+                        onPressed: () => callDoc.reference.update({'status': 'rejected'}),
+                        icon: const Icon(Icons.call_end, color: Colors.redAccent),
+                      ),
+                      IconButton.filled(
+                        tooltip: 'Répondre',
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => CallScreen(
+                              callId: callDoc.id,
+                              peerUid: callerUid,
+                              peerName: callerName,
+                              isCaller: false,
+                              isVideo: isVideo,
+                            ),
+                          ),
+                        ),
+                        icon: const Icon(Icons.call, color: Colors.white),
+                        style: IconButton.styleFrom(backgroundColor: const Color(0xFF36A66B)),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList());
+          },
+        ),
         const SizedBox(height: 22),
         const Text('CONVERSATIONS', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.2, fontSize: 12, color: muted)),
         const SizedBox(height: 10),
