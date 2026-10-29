@@ -933,17 +933,230 @@ class _FriendsPageState extends State<FriendsPage> {
 
 class MessagesPage extends StatelessWidget {
   const MessagesPage({super.key});
+
+  Future<void> openChat(BuildContext context, String friendUid, String friendName) async {
+    final me = FirebaseAuth.instance.currentUser!;
+    final db = FirebaseFirestore.instance;
+    try {
+      final existing = await db.collection('chats').where('members', arrayContains: me.uid).get();
+      QueryDocumentSnapshot<Map<String, dynamic>>? match;
+      for (final doc in existing.docs) {
+        final members = List<String>.from(doc.data()['members'] ?? const []);
+        if (members.contains(friendUid)) { match = doc; break; }
+      }
+      String chatId;
+      if (match != null) {
+        chatId = match.id;
+      } else {
+        final members = [me.uid, friendUid]..sort();
+        chatId = members.join('_');
+        final profile = await db.collection('users').doc(me.uid).get();
+        final myName = profile.data()?['username'] as String? ?? 'Joueur';
+        await db.collection('chats').doc(chatId).set({
+          'members': members,
+          'memberNames': {me.uid: myName, friendUid: friendName},
+          'lastMessage': '',
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+      if (!context.mounted) return;
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ChatRoomPage(chatId: chatId, friendUid: friendUid, friendName: friendName)));
+    } catch (_) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Impossible d’ouvrir cette conversation. Vérifie que vous êtes amis et que les règles Firestore sont publiées.')));
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => const Center(child: Padding(
-    padding: EdgeInsets.all(28),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.chat_bubble_outline, color: purple, size: 58),
-      SizedBox(height: 16),
-      Text('MESSAGES', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-      SizedBox(height: 8),
-      Text('La messagerie privée sera activée après validation des règles Firestore.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
-    ]),
-  ));
+  Widget build(BuildContext context) {
+    final me = FirebaseAuth.instance.currentUser!;
+    final db = FirebaseFirestore.instance;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+      children: [
+        const Text('MESSAGES', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        const Text('Tes conversations privées, au même endroit.', style: TextStyle(color: muted)),
+        const SizedBox(height: 22),
+        const Text('CONVERSATIONS', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.2, fontSize: 12, color: muted)),
+        const SizedBox(height: 10),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: db.collection('chats').where('members', arrayContains: me.uid).snapshots(),
+          builder: (context, snap) {
+            if (snap.hasError) return const Text('Les conversations ne chargent pas. Vérifie les règles Firestore.', style: TextStyle(color: muted));
+            if (!snap.hasData) return const Center(child: Padding(padding: EdgeInsets.all(18), child: CircularProgressIndicator(color: purple)));
+            final docs = snap.data!.docs;
+            if (docs.isEmpty) {
+              return Container(
+                padding: const EdgeInsets.all(22),
+                decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(22)),
+                child: const Column(children: [
+                  Icon(Icons.forum_outlined, color: purple, size: 42),
+                  SizedBox(height: 10),
+                  Text('Pas encore de conversation', style: TextStyle(fontWeight: FontWeight.w800)),
+                  SizedBox(height: 5),
+                  Text('Choisis un ami ci-dessous pour commencer à discuter.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
+                ]),
+              );
+            }
+            return Column(children: docs.map((doc) {
+              final data = doc.data();
+              final members = List<String>.from(data['members'] ?? const []);
+              final friendUid = members.firstWhere((id) => id != me.uid, orElse: () => '');
+              final names = Map<String, dynamic>.from(data['memberNames'] ?? const {});
+              final friendName = names[friendUid] as String? ?? 'Ami SquadVibe';
+              final last = data['lastMessage'] as String? ?? '';
+              return Card(
+                color: panel,
+                margin: const EdgeInsets.only(bottom: 9),
+                child: ListTile(
+                  leading: const CircleAvatar(backgroundColor: Color(0xFF3A2A52), child: Icon(Icons.person, color: purple)),
+                  title: Text(friendName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  subtitle: Text(last.isEmpty ? 'Démarrer la conversation' : last, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: muted)),
+                  trailing: const Icon(Icons.chevron_right, color: muted),
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ChatRoomPage(chatId: doc.id, friendUid: friendUid, friendName: friendName))),
+                ),
+              );
+            }).toList());
+          },
+        ),
+        const SizedBox(height: 25),
+        const Text('COMMENCER UNE DISCUSSION', style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.2, fontSize: 12, color: muted)),
+        const SizedBox(height: 10),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: db.collection('friends').doc(me.uid).collection('contacts').snapshots(),
+          builder: (context, snap) {
+            if (snap.hasError) return const Text('Impossible de charger tes amis.', style: TextStyle(color: muted));
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: purple));
+            if (snap.data!.docs.isEmpty) return const Text('Ajoute des amis dans l’onglet Amis pour pouvoir discuter.', style: TextStyle(color: muted));
+            return Column(children: snap.data!.docs.map((doc) {
+              final friendUid = doc.data()['uid'] as String? ?? doc.id;
+              return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                future: db.collection('users').doc(friendUid).get(),
+                builder: (context, userSnap) {
+                  final friendName = userSnap.data?.data()?['username'] as String? ?? 'Joueur';
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    leading: const CircleAvatar(backgroundColor: Color(0xFF3A2A52), child: Icon(Icons.person_outline, color: purple)),
+                    title: Text(friendName),
+                    subtitle: const Text('Ami SquadVibe', style: TextStyle(color: muted)),
+                    trailing: IconButton.filledTonal(onPressed: () => openChat(context, friendUid, friendName), icon: const Icon(Icons.chat_bubble_outline)),
+                  );
+                },
+              );
+            }).toList());
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class ChatRoomPage extends StatefulWidget {
+  final String chatId;
+  final String friendUid;
+  final String friendName;
+  const ChatRoomPage({super.key, required this.chatId, required this.friendUid, required this.friendName});
+
+  @override
+  State<ChatRoomPage> createState() => _ChatRoomPageState();
+}
+
+class _ChatRoomPageState extends State<ChatRoomPage> {
+  final controller = TextEditingController();
+  bool sending = false;
+
+  @override
+  void dispose() { controller.dispose(); super.dispose(); }
+
+  Future<void> send() async {
+    final message = controller.text.trim();
+    if (message.isEmpty || sending) return;
+    setState(() => sending = true);
+    try {
+      final me = FirebaseAuth.instance.currentUser!;
+      final db = FirebaseFirestore.instance;
+      final chat = db.collection('chats').doc(widget.chatId);
+      final batch = db.batch();
+      batch.set(chat.collection('messages').doc(), {
+        'senderUid': me.uid,
+        'text': message,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      batch.update(chat, {'lastMessage': message, 'updatedAt': FieldValue.serverTimestamp()});
+      await batch.commit();
+      controller.clear();
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Message non envoyé. Vérifie les règles Firestore.')));
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final me = FirebaseAuth.instance.currentUser!;
+    final stream = FirebaseFirestore.instance.collection('chats').doc(widget.chatId).collection('messages').orderBy('createdAt', descending: true).limit(100).snapshots();
+    return Scaffold(
+      appBar: AppBar(title: Row(children: [
+        const CircleAvatar(backgroundColor: Color(0xFF3A2A52), child: Icon(Icons.person, color: purple)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(widget.friendName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          const Text('Conversation privée', style: TextStyle(fontSize: 11, color: muted)),
+        ])),
+      ])),
+      body: Column(children: [
+        Expanded(child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: stream,
+          builder: (context, snap) {
+            if (snap.hasError) return const Center(child: Text('Impossible de charger les messages.'));
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: purple));
+            if (snap.data!.docs.isEmpty) return const Center(child: Padding(
+              padding: EdgeInsets.all(28),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.waving_hand_rounded, size: 42, color: purple),
+                SizedBox(height: 12),
+                Text('Dis salut 👋', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                SizedBox(height: 6),
+                Text('Envoie le premier message à ton ami.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
+              ]),
+            ));
+            return ListView(reverse: true, padding: const EdgeInsets.all(16), children: snap.data!.docs.map((doc) {
+              final data = doc.data();
+              final mine = data['senderUid'] == me.uid;
+              return Align(
+                alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.78),
+                  margin: const EdgeInsets.only(bottom: 9),
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                  decoration: BoxDecoration(
+                    color: mine ? purple : panel,
+                    borderRadius: BorderRadius.only(topLeft: const Radius.circular(18), topRight: const Radius.circular(18), bottomLeft: Radius.circular(mine ? 18 : 5), bottomRight: Radius.circular(mine ? 5 : 18)),
+                  ),
+                  child: Text(data['text'] as String? ?? '', style: TextStyle(color: mine ? Colors.white : null)),
+                ),
+              );
+            }).toList());
+          },
+        )),
+        SafeArea(top: false, child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: Row(children: [
+            Expanded(child: TextField(
+              controller: controller, minLines: 1, maxLines: 5,
+              textCapitalization: TextCapitalization.sentences,
+              onSubmitted: (_) => send(),
+              decoration: InputDecoration(hintText: 'Écris un message...', filled: true, fillColor: panel, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none)),
+            )),
+            const SizedBox(width: 8),
+            IconButton.filled(onPressed: sending ? null : send, style: IconButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white), icon: sending ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.send_rounded)),
+          ]),
+        )),
+      ]),
+    );
+  }
 }
 
 class NitroContent extends StatelessWidget {
