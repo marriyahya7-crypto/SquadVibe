@@ -87,7 +87,7 @@ jobs:
                       count=1
                   )
                   if count != 1:
-                      raise SystemExit("Could not add coreLibraryDesugaring dependency to Kotlin Gradle file")
+                      source += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
           else:
               if "coreLibraryDesugaringEnabled true" not in source:
                   source = source.replace(
@@ -103,7 +103,7 @@ jobs:
                       count=1
                   )
                   if count != 1:
-                      raise SystemExit("Could not add coreLibraryDesugaring dependency to Groovy Gradle file")
+                      source += "\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
           gradle.write_text(source)
           print("Call permissions, Android minSdk and core library desugaring configured")
           PY
