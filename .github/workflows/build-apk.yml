@@ -1,3 +1,4 @@
+
 name: Build SquadVibe APK
 
 on:
@@ -25,8 +26,44 @@ jobs:
         with:
           channel: stable
 
+      - name: Backup Firebase configuration
+        run: |
+          cp android/app/google-services.json /tmp/google-services.json
+
       - name: Generate Android project
         run: flutter create --platforms=android --project-name squadvibe .
+
+      - name: Restore Firebase configuration
+        run: |
+          cp /tmp/google-services.json android/app/google-services.json
+
+      - name: Configure Google Services plugin
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          settings = Path("android/settings.gradle")
+          text = settings.read_text()
+          marker = 'id("com.google.gms.google-services") version "4.4.2" apply false'
+          if marker not in text:
+              text = text.replace(
+                  "plugins {",
+                  'plugins {\n    ' + marker,
+                  1
+              )
+          settings.write_text(text)
+
+          app = Path("android/app/build.gradle")
+          text = app.read_text()
+          marker = 'id("com.google.gms.google-services")'
+          if marker not in text:
+              text = text.replace(
+                  "plugins {",
+                  "plugins {\n    " + marker,
+                  1
+              )
+          app.write_text(text)
+          PY
 
       - name: Get dependencies
         run: flutter pub get
