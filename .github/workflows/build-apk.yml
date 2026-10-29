@@ -38,7 +38,41 @@ jobs:
           cp /tmp/google-services.json android/app/google-services.json
 
   
+      - name: Configure Firebase Gradle plugin
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
 
+          settings = Path("android/settings.gradle.kts")
+          app = Path("android/app/build.gradle.kts")
+
+          if not settings.exists() or not app.exists():
+              settings = Path("android/settings.gradle")
+              app = Path("android/app/build.gradle")
+
+          if not settings.exists() or not app.exists():
+              raise SystemExit("Gradle files not found")
+
+          s = settings.read_text()
+          if "com.google.gms.google-services" not in s:
+              s = s.replace(
+                  "plugins {",
+                  'plugins {\n    id("com.google.gms.google-services") version "4.4.2" apply false',
+                  1
+              )
+              settings.write_text(s)
+
+          a = app.read_text()
+          if "com.google.gms.google-services" not in a:
+              a = a.replace(
+                  "plugins {",
+                  'plugins {\n    id("com.google.gms.google-services")',
+                  1
+              )
+              app.write_text(a)
+
+          print("Firebase plugin configured")
+          PY
       - name: Get dependencies
         run: flutter pub get
 
