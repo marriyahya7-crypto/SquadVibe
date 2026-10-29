@@ -261,9 +261,17 @@ class _LoginScreenState extends State<LoginScreen> {
           e.code == 'user-not-found') {
         showMessage('Adresse e-mail ou mot de passe incorrect.');
       } else if (e.code == 'weak-password') {
-        showMessage('Choisis un mot de passe plus sécurisé.');
+        showMessage('Choisis un mot de passe plus sécurisé (au moins 6 caractères).');
+      } else if (e.code == 'invalid-email') {
+        showMessage('Cette adresse e-mail n’est pas valide.');
+      } else if (e.code == 'network-request-failed') {
+        showMessage('Connexion Internet indisponible. Réessaie quand tu es connecté.');
+      } else if (e.code == 'operation-not-allowed') {
+        showMessage('Les inscriptions par e-mail ne sont pas activées dans Firebase.');
+      } else if (e.code == 'too-many-requests') {
+        showMessage('Trop de tentatives. Attends quelques minutes puis réessaie.');
       } else {
-        showMessage('Erreur Firebase : ${e.message ?? e.code}');
+        showMessage('Connexion/inscription impossible : ${e.message ?? e.code}');
       }
     } catch (e) {
       // Si la création du profil échoue après celle du compte,
@@ -274,20 +282,58 @@ class _LoginScreenState extends State<LoginScreen> {
         } catch (_) {}
       }
 
-      showMessage(
-        e.toString().replaceFirst('Exception: ', ''),
-      );
+      final details = e.toString().replaceFirst('Exception: ', '');
+      if (details.contains('permission-denied')) {
+        showMessage('Firebase refuse cette action. Vérifie que les dernières règles Firestore sont publiées.');
+      } else if (details.contains('unavailable') || details.contains('network')) {
+        showMessage('Serveur ou connexion indisponible. Réessaie dans un instant.');
+      } else {
+        showMessage(details);
+      }
     } finally {
       if (createAccount) accountCreationInProgress.value = false;
       if (mounted) setState(() => loading = false);
     }
   }
 
+  Future<void> resetPassword() async {
+    final mail = email.text.trim().toLowerCase();
+    if (mail.isEmpty || !mail.contains('@')) {
+      showMessage('Entre ton adresse e-mail pour recevoir le lien de réinitialisation.');
+      return;
+    }
+    setState(() => loading = true);
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: mail);
+      showMessage('Si cette adresse est associée à un compte, un e-mail de réinitialisation va être envoyé.');
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'invalid-email') {
+        showMessage('Cette adresse e-mail n’est pas valide.');
+      } else if (e.code == 'too-many-requests') {
+        showMessage('Trop de tentatives. Réessaie dans quelques minutes.');
+      } else {
+        showMessage('Impossible d’envoyer l’e-mail pour le moment. Vérifie ta connexion.');
+      }
+    } catch (_) {
+      showMessage('Impossible d’envoyer l’e-mail. Vérifie ta connexion puis réessaie.');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
   void showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 5),
+          backgroundColor: const Color(0xFF30253F),
+        ),
+      );
   }
 
   @override
@@ -319,7 +365,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       textCapitalization: TextCapitalization.none,
                       decoration: const InputDecoration(
                         prefixIcon: Icon(Icons.person_outline),
-                        hintText: 'Pseudo unique',
+                        hintText: 'Pseudo unique (3–20 caractères)',
+                        helperText: 'Lettres, chiffres, _ et . uniquement',
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -366,7 +413,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       onPressed: loading ? null : submit,
                       child: loading
-                          ? const CircularProgressIndicator()
+                          ? Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Text(createAccount ? 'Création en cours…' : 'Connexion…'),
+                              ],
+                            )
                           : Text(
                               createAccount
                                   ? 'Créer mon compte'
@@ -377,6 +439,18 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                     ),
                   ),
+                  if (!createAccount) ...[
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: loading ? null : resetPassword,
+                        child: const Text(
+                          'Mot de passe oublié ?',
+                          style: TextStyle(color: muted),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: loading
@@ -1147,6 +1221,7 @@ class _ChatRoomPageState extends State<ChatRoomPage> {
           child: Row(children: [
             Expanded(child: TextField(
               controller: controller, minLines: 1, maxLines: 5,
+              maxLength: 2000,
               textCapitalization: TextCapitalization.sentences,
               onSubmitted: (_) => send(),
               decoration: InputDecoration(hintText: 'Écris un message...', filled: true, fillColor: panel, contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none)),
