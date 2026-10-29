@@ -433,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
             'Joueur';
 
         final pages = <Widget>[
-          HomeContent(username: pseudo),
+          HomeContent(username: pseudo, onOpenFriends: () => setState(() => selectedIndex = 1), onOpenNitro: () => setState(() => selectedIndex = 3)),
           const FriendsPage(),
           const MessagesPage(),
           const NitroContent(),
@@ -506,7 +506,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class HomeContent extends StatelessWidget {
   final String username;
-  const HomeContent({super.key, required this.username});
+  final VoidCallback onOpenFriends;
+  final VoidCallback onOpenNitro;
+  const HomeContent({super.key, required this.username, required this.onOpenFriends, required this.onOpenNitro});
 
   @override
   Widget build(BuildContext context) {
@@ -546,9 +548,9 @@ class HomeContent extends StatelessWidget {
         const Text('À TOI DE JOUER', style: TextStyle(color: muted, letterSpacing: 1.8, fontWeight: FontWeight.w800, fontSize: 12)),
         const SizedBox(height: 13),
         Row(children: [
-          Expanded(child: _QuickAction(icon: Icons.person_add_alt_1_rounded, title: 'Ajouter', subtitle: 'Trouve tes amis', color: const Color(0xFF9B5CFF), onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ouvre l’onglet Amis pour rechercher un pseudo.'))))),
+          Expanded(child: _QuickAction(icon: Icons.person_add_alt_1_rounded, title: 'Ajouter', subtitle: 'Trouve tes amis', color: const Color(0xFF9B5CFF), onTap: onOpenFriends)),
           const SizedBox(width: 12),
-          Expanded(child: _QuickAction(icon: Icons.workspace_premium_rounded, title: 'Nitro', subtitle: 'Passe au niveau +', color: const Color(0xFFFFC857), onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Découvre SquadVibe Nitro dans l’onglet Nitro.'))))),
+          Expanded(child: _QuickAction(icon: Icons.workspace_premium_rounded, title: 'Nitro', subtitle: 'Passe au niveau +', color: const Color(0xFFFFC857), onTap: onOpenNitro)),
         ]),
         const SizedBox(height: 26),
         const Text('TON ESPACE', style: TextStyle(color: muted, letterSpacing: 1.8, fontWeight: FontWeight.w800, fontSize: 12)),
@@ -1190,7 +1192,7 @@ class NitroContent extends StatelessWidget {
         const _NitroBenefit(icon: Icons.palette_outlined, title: 'Thèmes exclusifs', subtitle: 'Personnalise les couleurs de ton espace.'),
         const _NitroBenefit(icon: Icons.workspace_premium_outlined, title: 'Badge Nitro', subtitle: 'Un badge spécial sur ton profil.'),
         const _NitroBenefit(icon: Icons.auto_awesome_outlined, title: 'Profil mis en avant', subtitle: 'Affiche ton style dans la communauté.'),
-        const _NitroBenefit(icon: Icons.bolt_outlined, title: 'Accès aux nouveautés', subtitle: 'Découvre les prochaines options en avant-première.'),
+        const _NitroBenefit(icon: Icons.bolt, title: 'Accès aux nouveautés', subtitle: 'Découvre les prochaines options en avant-première.'),
         const SizedBox(height: 16),
         FilledButton.icon(
           onPressed: () => showDialog<void>(
@@ -1202,7 +1204,7 @@ class NitroContent extends StatelessWidget {
             ),
           ),
           style: FilledButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
-          icon: const Icon(Icons.lock_clock_outlined),
+          icon: const Icon(Icons.lock_clock),
           label: const Text('Bientôt disponible', style: TextStyle(fontWeight: FontWeight.w800)),
         ),
         const SizedBox(height: 10),
