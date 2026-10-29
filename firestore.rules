@@ -100,6 +100,30 @@ service cloud.firestore {
       allow delete: if signedIn() && request.auth.uid == userId;
     }
 
+    // User-submitted reports are write-only for regular users.
+    // Review and moderation tools must use a trusted admin backend.
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'reporterUid', 'reportedUid', 'reportedUsername',
+          'reason', 'details', 'status', 'createdAt'
+        ])
+        && request.resource.data.reporterUid == request.auth.uid
+        && request.resource.data.reportedUid is string
+        && request.resource.data.reportedUid != request.auth.uid
+        && request.resource.data.reportedUsername is string
+        && request.resource.data.reason in [
+          'Pseudo inapproprié',
+          'Harcèlement ou insultes',
+          'Contenu dangereux',
+          'Autre'
+        ]
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 500
+        && request.resource.data.status == 'open';
+      allow read, update, delete: if false;
+    }
+
     match /chats/{chatId} {
       allow read: if signedIn() && request.auth.uid in resource.data.members;
 
