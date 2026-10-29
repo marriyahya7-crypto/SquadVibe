@@ -757,8 +757,8 @@ class _FriendsPageState extends State<FriendsPage> {
       final myFriends = List<String>.from(myData['friends'] ?? const []);
       if (myFriends.contains(targetUid)) { notice('Vous êtes déjà amis.'); return; }
       final requests = FirebaseFirestore.instance.collection('friendRequests');
-      final existing = await requests.where('fromUid', isEqualTo: me.uid).where('toUid', isEqualTo: targetUid).limit(1).get();
-      if (existing.docs.any((d) => d.data()['status'] == 'pending')) { notice('Demande déjà envoyée.'); return; }
+      final existing = await requests.where('fromUid', isEqualTo: me.uid).get();
+      if (existing.docs.any((d) => d.data()['toUid'] == targetUid && d.data()['status'] == 'pending')) { notice('Demande déjà envoyée.'); return; }
       await requests.add({
         'fromUid': me.uid,
         'fromUsername': myData['username'] ?? me.email?.split('@').first ?? 'Joueur',
