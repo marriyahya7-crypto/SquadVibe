@@ -86,3 +86,45 @@ exports.notifyIncomingCall = onDocumentCreated(
     );
   }
 );
+
+
+// Safety moderation: five distinct reporters in seven days trigger a temporary
+// seven-day suspension. Client report creation is also limited to one per pair.
+const { onDocumentCreated: onReportCreated } = require("firebase-functions/v2/firestore");
+const { Timestamp } = require("firebase-admin/firestore");
+
+exports.moderateReports = onReportCreated("reports/{reportId}", async (event) => {
+  const report = event.data?.data();
+  if (!report || typeof report.reportedUid !== "string" ||
+      typeof report.reporterUid !== "string" ||
+      report.reporterUid === report.reportedUid) return;
+
+  const targetUid = report.reportedUid;
+  const cutoff = Timestamp.fromMillis(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recent = await db.collection("reports")
+    .where("reportedUid", "==", targetUid)
+    .where("createdAt", ">=", cutoff)
+    .get();
+
+  const reporters = new Set();
+  for (const doc of recent.docs) {
+    const data = doc.data();
+    if (data.status === "open" && typeof data.reporterUid === "string" &&
+        data.reporterUid !== targetUid) reporters.add(data.reporterUid);
+  }
+
+  if (reporters.size >= 5) {
+    const userRef = db.collection("users").doc(targetUid);
+    const user = await userRef.get();
+    if (!user.exists) return;
+    const existingUntil = user.data()?.suspendedUntil?.toDate?.();
+    if (existingUntil && existingUntil.getTime() > Date.now()) return;
+
+    await userRef.set({
+      moderationStatus: "suspended",
+      suspendedUntil: Timestamp.fromMillis(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      moderationReason: "Seuil de signalements distincts atteint; vérification requise"
+    }, { merge: true });
+    console.log("Temporary suspension applied after reports:", targetUid);
+  }
+});
