@@ -79,12 +79,15 @@ jobs:
                       "compileOptions {\n        isCoreLibraryDesugaringEnabled = true",
                       1
                   )
-              if 'coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:' not in source:
-                  source = source.replace(
-                      "dependencies {",
-                      'dependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',
-                      1
+              if "coreLibraryDesugaring(" not in source:
+                  source, count = re.subn(
+                      r"dependencies\\s*\\{",
+                      'dependencies {\\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',
+                      source,
+                      count=1
                   )
+                  if count != 1:
+                      raise SystemExit("Could not add coreLibraryDesugaring dependency to Kotlin Gradle file")
           else:
               if "coreLibraryDesugaringEnabled true" not in source:
                   source = source.replace(
@@ -92,12 +95,15 @@ jobs:
                       "compileOptions {\n        coreLibraryDesugaringEnabled true",
                       1
                   )
-              if "coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:" not in source:
-                  source = source.replace(
-                      "dependencies {",
-                      "dependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'",
-                      1
+              if "coreLibraryDesugaring" not in source:
+                  source, count = re.subn(
+                      r"dependencies\\s*\\{",
+                      "dependencies {\\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'",
+                      source,
+                      count=1
                   )
+                  if count != 1:
+                      raise SystemExit("Could not add coreLibraryDesugaring dependency to Groovy Gradle file")
           gradle.write_text(source)
           print("Call permissions, Android minSdk and core library desugaring configured")
           PY
