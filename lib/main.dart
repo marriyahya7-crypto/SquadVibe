@@ -895,20 +895,19 @@ class _FriendsPageState extends State<FriendsPage> {
   Future<void> reportUser(String otherUid, String otherName) async {
     final reason = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => SimpleDialog(
         title: Text('Signaler $otherName'),
-        content: const Text('Choisis la raison du signalement. Le signalement sera enregistré pour vérification.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Annuler'),
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text('Choisis la raison du signalement. Il sera enregistré pour vérification.'),
           ),
           ...[
             'Pseudo inapproprié',
             'Harcèlement ou insultes',
             'Contenu dangereux',
             'Autre',
-          ].map((label) => TextButton(
+          ].map((label) => SimpleDialogOption(
                 onPressed: () => Navigator.pop(dialogContext, label),
                 child: Text(label),
               )),
