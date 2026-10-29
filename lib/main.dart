@@ -1,7 +1,11 @@
 
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   runApp(const SquadVibeApp());
 }
 
@@ -15,300 +19,231 @@ class SquadVibeApp extends StatelessWidget {
       title: 'SquadVibe',
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF10111A),
+        scaffoldBackgroundColor: const Color(0xFF100B1F),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B5CF6),
+          seedColor: const Color(0xFF9B5CFF),
           brightness: Brightness.dark,
         ),
-        useMaterial3: true,
-      ),
-      home: const HomePage(),
-    );
-  }
-}
-
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
-
-  @override
-  State<HomePage> createState() => _HomePageState();
-}
-
-class _HomePageState extends State<HomePage> {
-  int tab = 0;
-  String myStatus = 'En ligne';
-
-  final List<String> friends = [];
-  final TextEditingController friendController =
-      TextEditingController();
-  final TextEditingController messageController =
-      TextEditingController();
-  final List<String> messages = [];
-
-  @override
-  void dispose() {
-    friendController.dispose();
-    messageController.dispose();
-    super.dispose();
-  }
-
-  void addFriend() {
-    friendController.clear();
-
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Ajouter un ami'),
-        content: TextField(
-          controller: friendController,
-          autofocus: true,
-          maxLength: 25,
-          decoration: const InputDecoration(
-            labelText: 'Pseudo ou code ami',
-            hintText: 'Exemple : Yahya123',
-            prefixIcon: Icon(Icons.person_add_alt_1),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF211833),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
-          onSubmitted: (_) {
-            saveFriend(dialogContext);
-          },
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => saveFriend(dialogContext),
-            child: const Text('Ajouter'),
-          ),
-        ],
       ),
+      home: const AuthPage(),
     );
   }
+}
 
-  void saveFriend(BuildContext dialogContext) {
-    final name = friendController.text.trim();
+class AuthPage extends StatefulWidget {
+  const AuthPage({super.key});
 
-    if (name.isEmpty) return;
+  @override
+  State<AuthPage> createState() => _AuthPageState();
+}
 
-    if (friends.any(
-      (friend) => friend.toLowerCase() == name.toLowerCase(),
-    )) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cet ami est déjà dans ta liste.')),
-      );
+class _AuthPageState extends State<AuthPage> {
+  final email = TextEditingController();
+  final password = TextEditingController();
+  final pseudo = TextEditingController();
+
+  bool isLogin = true;
+  bool loading = false;
+  bool obscure = true;
+  String message = '';
+
+  Future<void> submit() async {
+    final mail = email.text.trim();
+    final pass = password.text;
+    final name = pseudo.text.trim();
+
+    if (mail.isEmpty || pass.isEmpty ||
+        (!isLogin && name.isEmpty)) {
+      setState(() => message = 'Remplis tous les champs.');
+      return;
+    }
+
+    if (!isLogin && pass.length < 6) {
+      setState(() =>
+          message = 'Le mot de passe doit contenir au moins 6 caractères.');
       return;
     }
 
     setState(() {
-      friends.add(name);
+      loading = true;
+      message = '';
     });
 
-    Navigator.pop(dialogContext);
+    try {
+      if (isLogin) {
+        await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: mail,
+          password: pass,
+        );
+      } else {
+        final credential = await FirebaseAuth.instance
+            .createUserWithEmailAndPassword(
+          email: mail,
+          password: pass,
+        );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$name ajouté à ta liste !')),
-    );
+        await credential.user?.sendEmailVerification();
+
+        if (mounted) {
+          setState(() {
+            message =
+                'Compte créé ! Vérifie ta boîte mail pour confirmer ton adresse.';
+            isLogin = true;
+          });
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          message = switch (e.code) {
+            'email-already-in-use' => 'Cette adresse est déjà utilisée.',
+            'invalid-email' => 'Adresse e-mail invalide.',
+            'weak-password' => 'Choisis un mot de passe plus solide.',
+            'user-not-found' => 'Aucun compte trouvé avec cet e-mail.',
+            'wrong-password' || 'invalid-credential' =>
+              'E-mail ou mot de passe incorrect.',
+            'network-request-failed' =>
+              'Vérifie ta connexion Internet.',
+            'too-many-requests' =>
+              'Trop de tentatives. Réessaie plus tard.',
+            _ => 'Erreur : ${e.message ?? e.code}',
+          };
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => message =
+            'Firebase n’est pas encore correctement configuré.');
+      }
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
 
-  void sendMessage() {
-    final message = messageController.text.trim();
-    if (message.isEmpty) return;
-
-    setState(() {
-      messages.add(message);
-      messageController.clear();
-    });
-  }
-
-  Widget homeContent() {
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        const SizedBox(height: 12),
-        const Text(
-          'SQUADVIBE',
-          style: TextStyle(
-            color: Color(0xFFA78BFA),
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 4,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Ta squad. Ton univers.',
-          style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 22),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF6D28D9), Color(0xFF312E81)],
-            ),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.groups_rounded, size: 35),
-              const SizedBox(height: 12),
-              const Text('MA SQUAD'),
-              const SizedBox(height: 5),
-              Text(
-                '${friends.length} ami(s)',
-                style: const TextStyle(
-                  fontSize: 23,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: addFriend,
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('Ajouter un ami'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF4C1D95),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 25),
-        const Text(
-          'Mon statut',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          children: ['En ligne', 'En jeu', 'Absent', 'Invisible'].map((s) {
-            return ChoiceChip(
-              label: Text(s),
-              selected: myStatus == s,
-              onSelected: (_) => setState(() => myStatus = s),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 25),
-        const Text(
-          'Mes amis',
-          style: TextStyle(fontSize: 19, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 10),
-        if (friends.isEmpty)
-          const Padding(
-            padding: EdgeInsets.all(20),
-            child: Text(
-              'Aucun ami pour le moment. '
-              'Appuie sur « Ajouter un ami » pour commencer.',
-              textAlign: TextAlign.center,
-            ),
-          ),
-        ...friends.map(
-          (friend) => Card(
-            color: const Color(0xFF1C1D2B),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: const Color(0xFF312E81),
-                child: Text(friend[0].toUpperCase()),
-              ),
-              title: Text(friend),
-              subtitle: const Text('Ami ajouté sur cet appareil'),
-              trailing: IconButton(
-                icon: const Icon(Icons.person_remove_outlined),
-                tooltip: 'Supprimer',
-                onPressed: () {
-                  setState(() => friends.remove(friend));
-                },
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget chatContent() {
-    return Column(
-      children: [
-        const ListTile(
-          title: Text(
-            'Chat de la squad',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          subtitle: Text('Messages locaux de démonstration'),
-        ),
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(16),
-            children: messages.map((message) {
-              return Align(
-                alignment: Alignment.centerRight,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF6D28D9),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(message),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: messageController,
-                  decoration: const InputDecoration(
-                    hintText: 'Écrire un message...',
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (_) => sendMessage(),
-                ),
-              ),
-              IconButton(
-                onPressed: sendMessage,
-                icon: const Icon(Icons.send_rounded),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+  @override
+  void dispose() {
+    email.dispose();
+    password.dispose();
+    pseudo.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: tab == 0 ? homeContent() : chatContent(),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (index) {
-          setState(() => tab = index);
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_rounded),
-            label: 'Accueil',
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.bolt_rounded,
+                    size: 68,
+                    color: Color(0xFFB58AFF),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'SQUADVIBE',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 3,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isLogin
+                        ? 'Content de te revoir !'
+                        : 'Crée ton compte et rejoins tes amis.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 32),
+                  if (!isLogin) ...[
+                    TextField(
+                      controller: pseudo,
+                      maxLength: 20,
+                      decoration: const InputDecoration(
+                        labelText: 'Ton pseudo',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                    controller: email,
+                    keyboardType: TextInputType.emailAddress,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Adresse e-mail',
+                      prefixIcon: Icon(Icons.mail_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: password,
+                    obscureText: obscure,
+                    decoration: InputDecoration(
+                      labelText: 'Mot de passe',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        onPressed: () =>
+                            setState(() => obscure = !obscure),
+                        icon: Icon(obscure
+                            ? Icons.visibility
+                            : Icons.visibility_off),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  FilledButton(
+                    onPressed: loading ? null : submit,
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(54),
+                      backgroundColor: const Color(0xFF8B4DFF),
+                    ),
+                    child: loading
+                        ? const CircularProgressIndicator()
+                        : Text(isLogin
+                            ? 'Se connecter'
+                            : 'Créer mon compte'),
+                  ),
+                  TextButton(
+                    onPressed: loading
+                        ? null
+                        : () => setState(() {
+                              isLogin = !isLogin;
+                              message = '';
+                            }),
+                    child: Text(isLogin
+                        ? 'Pas encore de compte ? Inscris-toi'
+                        : 'Déjà un compte ? Connecte-toi'),
+                  ),
+                  if (message.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: Color(0xFFD0B6FF)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_rounded),
-            label: 'Chat',
-          ),
-        ],
+        ),
       ),
     );
   }
