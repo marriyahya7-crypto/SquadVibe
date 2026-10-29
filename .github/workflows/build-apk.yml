@@ -37,6 +37,44 @@ jobs:
         run: |
           cp /tmp/google-services.json android/app/google-services.json
 
+      - name: Configure Android permissions for calls
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          text = manifest.read_text()
+          permissions = [
+              "android.permission.INTERNET",
+              "android.permission.RECORD_AUDIO",
+              "android.permission.CAMERA",
+              "android.permission.MODIFY_AUDIO_SETTINGS",
+              "android.permission.BLUETOOTH",
+              "android.permission.BLUETOOTH_CONNECT",
+          ]
+          additions = []
+          for permission in permissions:
+              if f'android:name="{permission}"' not in text:
+                  additions.append(f'    <uses-permission android:name="{permission}" />')
+          if additions:
+              text = text.replace("<application", "\n".join(additions) + "\n    <application", 1)
+              manifest.write_text(text)
+
+          gradle = Path("android/app/build.gradle.kts")
+          if not gradle.exists():
+              gradle = Path("android/app/build.gradle")
+          source = gradle.read_text()
+          if gradle.name.endswith(".kts"):
+              source = re.sub(r"minSdk\s*=\s*flutter\.minSdkVersion", "minSdk = 23", source)
+              source = re.sub(r"minSdk\s*=\s*\d+", "minSdk = 23", source)
+          else:
+              source = re.sub(r"minSdkVersion\s+flutter\.minSdkVersion", "minSdkVersion 23", source)
+              source = re.sub(r"minSdkVersion\s+\d+", "minSdkVersion 23", source)
+          gradle.write_text(source)
+          print("Call permissions and Android minSdk configured")
+          PY
+
   
       - name: Configure Firebase Gradle plugin
         run: |
