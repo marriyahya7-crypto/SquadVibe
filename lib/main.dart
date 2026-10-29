@@ -436,6 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
           HomeContent(username: pseudo),
           const FriendsPage(),
           const MessagesPage(),
+          const NitroContent(),
           ProfileContent(
             username: pseudo,
             email: user.email ?? '',
@@ -486,6 +487,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: 'Messages',
               ),
               NavigationDestination(
+                icon: Icon(Icons.workspace_premium_outlined),
+                selectedIcon: Icon(Icons.workspace_premium),
+                label: 'Nitro',
+              ),
+              NavigationDestination(
                 icon: Icon(Icons.person_outline),
                 selectedIcon: Icon(Icons.person),
                 label: 'Profil',
@@ -500,65 +506,90 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class HomeContent extends StatelessWidget {
   final String username;
-
   const HomeContent({super.key, required this.username});
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser!;
+    final contacts = FirebaseFirestore.instance.collection('friends').doc(user.uid).collection('contacts');
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 28),
       children: [
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF9B5CFF), Color(0xFF5426A8)],
-            ),
-            borderRadius: BorderRadius.circular(24),
+            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFB06CFF), Color(0xFF6C35D7), Color(0xFF32176E)]),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [BoxShadow(color: purple.withValues(alpha: 0.22), blurRadius: 24, offset: const Offset(0, 10))],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.bolt, size: 34),
-              const SizedBox(height: 12),
-              Text(
-                'Salut $username !',
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                ),
+          child: Stack(children: [
+            const Positioned(right: -8, top: -10, child: Icon(Icons.bolt, size: 100, color: Color(0x33FFFFFF))),
+            Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.17), borderRadius: BorderRadius.circular(30)), child: const Text('⚡ TON UNIVERS, TA SQUAD', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1))),
+              const SizedBox(height: 18),
+              Text('Salut $username 👋', style: const TextStyle(fontSize: 27, height: 1.1, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 9),
+              const Text('Retrouve tes amis et fais vivre ta squad.', style: TextStyle(color: Color(0xFFECE0FF), fontSize: 14)),
+              const SizedBox(height: 20),
+              StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: contacts.snapshots(),
+                builder: (context, snap) {
+                  final count = snap.data?.docs.length ?? 0;
+                  final label = count.toString() + (count == 1 ? ' ami dans ta squad' : ' amis dans ta squad');
+                  return Row(children: [const Icon(Icons.people_alt_rounded, size: 18), const SizedBox(width: 7), Text(label, style: const TextStyle(fontWeight: FontWeight.w700))]);
+                },
               ),
-              const SizedBox(height: 8),
-              const Text('Ta squad, tes amis, ton univers. 🚀'),
-            ],
-          ),
+            ]),
+          ]),
         ),
-        const SizedBox(height: 30),
-        const Text(
-          'TON ESPACE',
-          style: TextStyle(
-            color: muted,
-            letterSpacing: 2,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 14),
-        const FeatureTile(
-          icon: Icons.people_alt_outlined,
-          title: 'Trouve ta squad',
-          subtitle: 'Recherche des joueurs et développe ton réseau.',
-        ),
-        const FeatureTile(
-          icon: Icons.chat_outlined,
-          title: 'Reste connecté',
-          subtitle: 'Retrouve tes conversations au même endroit.',
-        ),
-        const FeatureTile(
-          icon: Icons.shield_outlined,
-          title: 'Ton compte',
-          subtitle: 'Gère ton profil et tes informations.',
-        ),
+        const SizedBox(height: 26),
+        const Text('À TOI DE JOUER', style: TextStyle(color: muted, letterSpacing: 1.8, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(height: 13),
+        Row(children: [
+          Expanded(child: _QuickAction(icon: Icons.person_add_alt_1_rounded, title: 'Ajouter', subtitle: 'Trouve tes amis', color: const Color(0xFF9B5CFF), onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ouvre l’onglet Amis pour rechercher un pseudo.'))))),
+          const SizedBox(width: 12),
+          Expanded(child: _QuickAction(icon: Icons.workspace_premium_rounded, title: 'Nitro', subtitle: 'Passe au niveau +', color: const Color(0xFFFFC857), onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Découvre SquadVibe Nitro dans l’onglet Nitro.'))))),
+        ]),
+        const SizedBox(height: 26),
+        const Text('TON ESPACE', style: TextStyle(color: muted, letterSpacing: 1.8, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(height: 13),
+        const FeatureTile(icon: Icons.people_alt_outlined, title: 'Ta squad, toujours proche', subtitle: 'Ajoute tes amis avec leur pseudo unique et accepte les demandes reçues.'),
+        const FeatureTile(icon: Icons.chat_bubble_outline_rounded, title: 'Des conversations privées', subtitle: 'Lance une discussion avec les amis que tu as acceptés.'),
+        const FeatureTile(icon: Icons.workspace_premium_outlined, title: 'Personnalise ton expérience', subtitle: 'Découvre les avantages prévus pour SquadVibe Nitro.'),
+        const SizedBox(height: 8),
+        Center(child: Text('SquadVibe • créé pour ta squad 💜', style: TextStyle(color: muted.withValues(alpha: 0.75), fontSize: 12))),
       ],
+    );
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+  const _QuickAction({required this.icon, required this.title, required this.subtitle, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: panel,
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(width: 42, height: 42, decoration: BoxDecoration(color: color.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(14)), child: Icon(icon, color: color)),
+            const SizedBox(height: 15),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text(subtitle, style: const TextStyle(color: muted, fontSize: 12)),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -913,4 +944,81 @@ class MessagesPage extends StatelessWidget {
       Text('La messagerie privée sera activée après validation des règles Firestore.', textAlign: TextAlign.center, style: TextStyle(color: muted)),
     ]),
   ));
+}
+
+class NitroContent extends StatelessWidget {
+  const NitroContent({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(25),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFFFD978), Color(0xFFB46CFF), Color(0xFF5829B8)]),
+            borderRadius: BorderRadius.circular(28),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6), decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.18), borderRadius: BorderRadius.circular(30)), child: const Text('✦ SQUADVIBE NITRO', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.3))),
+            const SizedBox(height: 20),
+            const Text('Ta squad,\nton style.', style: TextStyle(fontSize: 34, height: 1.05, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 10),
+            const Text('Une expérience plus personnalisée, pensée pour toi.', style: TextStyle(fontSize: 14)),
+            const SizedBox(height: 20),
+            const Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text('1,99 €', style: TextStyle(fontSize: 30, fontWeight: FontWeight.w900)),
+              Padding(padding: EdgeInsets.only(bottom: 5, left: 5), child: Text('/ mois', style: TextStyle(fontWeight: FontWeight.w600))),
+            ]),
+          ]),
+        ),
+        const SizedBox(height: 24),
+        const Text('LES AVANTAGES NITRO', style: TextStyle(color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(height: 12),
+        const _NitroBenefit(icon: Icons.palette_outlined, title: 'Thèmes exclusifs', subtitle: 'Personnalise les couleurs de ton espace.'),
+        const _NitroBenefit(icon: Icons.workspace_premium_outlined, title: 'Badge Nitro', subtitle: 'Un badge spécial sur ton profil.'),
+        const _NitroBenefit(icon: Icons.auto_awesome_outlined, title: 'Profil mis en avant', subtitle: 'Affiche ton style dans la communauté.'),
+        const _NitroBenefit(icon: Icons.bolt_outlined, title: 'Accès aux nouveautés', subtitle: 'Découvre les prochaines options en avant-première.'),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Nitro arrive bientôt ✨'),
+              content: const Text('L’offre et son prix sont présentés ici, mais le paiement n’est pas encore activé. Rien ne sera prélevé.'),
+              actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Compris'))],
+            ),
+          ),
+          style: FilledButton.styleFrom(backgroundColor: purple, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16)),
+          icon: const Icon(Icons.lock_clock_outlined),
+          label: const Text('Bientôt disponible', style: TextStyle(fontWeight: FontWeight.w800)),
+        ),
+        const SizedBox(height: 10),
+        const Text('Aucun paiement actif pour le moment. Le prix affiché est une proposition.', textAlign: TextAlign.center, style: TextStyle(color: muted, fontSize: 11)),
+      ],
+    );
+  }
+}
+
+class _NitroBenefit extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  const _NitroBenefit({required this.icon, required this.title, required this.subtitle});
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(19), border: Border.all(color: purple.withValues(alpha: 0.15))),
+    child: Row(children: [
+      Container(width: 45, height: 45, decoration: BoxDecoration(color: purple.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(14)), child: Icon(icon, color: purple)),
+      const SizedBox(width: 14),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: const TextStyle(color: muted, fontSize: 12)),
+      ])),
+      const Icon(Icons.check_circle, color: Color(0xFF7DDBA3), size: 19),
+    ]),
+  );
 }
