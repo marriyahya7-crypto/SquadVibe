@@ -250,7 +250,10 @@ class _LoginScreenState extends State<LoginScreen> {
         try {
           await credential!.user!.delete();
         } catch (_) {
-          // Si la suppression échoue, ne pas masquer l'erreur initiale.
+          // Évite de laisser l'utilisateur connecté sans profil Firestore.
+          try {
+            await FirebaseAuth.instance.signOut();
+          } catch (_) {}
         }
       }
 
@@ -279,7 +282,12 @@ class _LoginScreenState extends State<LoginScreen> {
       if (createdAuthAccount && credential?.user != null) {
         try {
           await credential!.user!.delete();
-        } catch (_) {}
+        } catch (_) {
+          // Si le compte ne peut pas être supprimé, éviter une session sans profil.
+          try {
+            await FirebaseAuth.instance.signOut();
+          } catch (_) {}
+        }
       }
 
       final details = e.toString().replaceFirst('Exception: ', '');
