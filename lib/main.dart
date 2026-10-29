@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'call_screen.dart';
 import 'notification_service.dart';
 
@@ -237,9 +239,8 @@ class _LoginScreenState extends State<LoginScreen> {
           throw Exception('Ce pseudo contient un terme interdit. Choisis-en un autre.');
         }
 
-        if (!RegExp(r'^[a-zA-Z0-9_.]{3,20}
-            'Pseudo : 3 à 20 caractères, lettres, chiffres, _ ou .',
-          );
+        if (!RegExp(r'^[a-zA-Z0-9_.]{3,20}$').hasMatch(pseudo)) {
+          throw Exception('Pseudo : 3 à 20 caractères, lettres, chiffres, _ ou .');
         }
 
         credential = await FirebaseAuth.instance
@@ -365,6 +366,97 @@ class _LoginScreenState extends State<LoginScreen> {
       if (createAccount) accountCreationInProgress.value = false;
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  Future<void> signInWithGoogle() async {
+    if (loading) return;
+    setState(() => loading = true);
+    try {
+      final googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) return;
+      final googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      final result = await FirebaseAuth.instance.signInWithCredential(credential);
+      await ensureSocialProfile(result.user);
+    } on FirebaseAuthException catch (e) {
+      showMessage(_socialAuthError(e));
+    } catch (_) {
+      showMessage('Connexion Google impossible. Vérifie la configuration Firebase et réessaie.');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> signInWithApple() async {
+    if (loading) return;
+    setState(() => loading = true);
+    try {
+      UserCredential result;
+      if (Theme.of(context).platform == TargetPlatform.iOS ||
+          Theme.of(context).platform == TargetPlatform.macOS) {
+        final apple = await SignInWithApple.getAppleIDCredential(
+          scopes: [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName],
+        );
+        final oauth = OAuthProvider('apple.com').credential(
+          idToken: apple.identityToken,
+          accessToken: apple.authorizationCode,
+        );
+        result = await FirebaseAuth.instance.signInWithCredential(oauth);
+      } else {
+        result = await FirebaseAuth.instance.signInWithProvider(OAuthProvider('apple.com'));
+      }
+      await ensureSocialProfile(result.user);
+    } on FirebaseAuthException catch (e) {
+      showMessage(_socialAuthError(e));
+    } catch (_) {
+      showMessage('Connexion Apple non configurée ou annulée. Vérifie le fournisseur Apple dans Firebase.');
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
+  }
+
+  String _socialAuthError(FirebaseAuthException e) {
+    if (e.code == 'operation-not-allowed') return 'Active ce fournisseur dans Firebase Authentication.';
+    if (e.code == 'account-exists-with-different-credential') return 'Cette adresse utilise déjà une autre méthode de connexion.';
+    if (e.code == 'network-request-failed') return 'Connexion Internet indisponible. Réessaie.';
+    if (e.code == 'popup-closed-by-user' || e.code == 'canceled') return 'Connexion annulée.';
+    return 'Connexion impossible (${e.code}). Vérifie la configuration du fournisseur.';
+  }
+
+  Future<void> ensureSocialProfile(User? user) async {
+    if (user == null) return;
+    final db = FirebaseFirestore.instance;
+    final userRef = db.collection('users').doc(user.uid);
+    if ((await userRef.get()).exists) return;
+    var base = (user.displayName ?? '').toLowerCase().replaceAll(RegExp(r'[^a-z0-9_.]'), '');
+    base = base.replaceAll(RegExp(r'^[_.]+|[_.]+$'), '');
+    if (base.length < 3) base = 'user';
+    if (base.length > 12) base = base.substring(0, 12);
+    final candidate = '${base}_${user.uid.substring(0, 6).toLowerCase()}';
+    final usernameRef = db.collection('usernames').doc(candidate);
+    await db.runTransaction((transaction) async {
+      if ((await transaction.get(userRef)).exists) return;
+      if ((await transaction.get(usernameRef)).exists) {
+        throw Exception('Impossible de générer un pseudo unique. Contacte le support.');
+      }
+      transaction.set(usernameRef, {
+        'uid': user.uid,
+        'username': candidate,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      transaction.set(userRef, {
+        'uid': user.uid,
+        'username': candidate,
+        'usernameLower': candidate,
+        'email': user.email ?? '',
+        'bio': '',
+        'friends': <String>[],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    });
   }
 
   Future<void> resetPassword() async {
@@ -510,6 +602,39 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                     ),
                   ),
+                  if (!createAccount) ...[
+                    const SizedBox(height: 8),
+                    const Row(children: [
+                      Expanded(child: Divider(color: Color(0xFF443A55))),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('OU CONTINUER AVEC', style: TextStyle(color: muted, fontSize: 11, letterSpacing: 1)),
+                      ),
+                      Expanded(child: Divider(color: Color(0xFF443A55))),
+                    ]),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: loading ? null : signInWithGoogle,
+                        icon: const Icon(Icons.g_mobiledata, size: 30),
+                        label: const Text('Continuer avec Google'),
+                        style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFF443A55)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: OutlinedButton.icon(
+                        onPressed: loading ? null : signInWithApple,
+                        icon: const Icon(Icons.apple, size: 25),
+                        label: const Text('Continuer avec Apple'),
+                        style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFF443A55)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                      ),
+                    ),
+                  ],
                   if (!createAccount) ...[
                     Align(
                       alignment: Alignment.centerRight,
