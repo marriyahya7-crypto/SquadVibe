@@ -892,6 +892,47 @@ class _FriendsPageState extends State<FriendsPage> {
     }
   }
 
+  Future<void> reportUser(String otherUid, String otherName) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Signaler $otherName'),
+        content: const Text('Choisis la raison du signalement. Le signalement sera enregistré pour vérification.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annuler'),
+          ),
+          ...[
+            'Pseudo inapproprié',
+            'Harcèlement ou insultes',
+            'Contenu dangereux',
+            'Autre',
+          ].map((label) => TextButton(
+                onPressed: () => Navigator.pop(dialogContext, label),
+                child: Text(label),
+              )),
+        ],
+      ),
+    );
+    if (reason == null || !mounted) return;
+    try {
+      final me = FirebaseAuth.instance.currentUser!;
+      await FirebaseFirestore.instance.collection('reports').add({
+        'reporterUid': me.uid,
+        'reportedUid': otherUid,
+        'reportedUsername': otherName,
+        'reason': reason,
+        'details': '',
+        'status': 'open',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      notice('Signalement envoyé. Merci de contribuer à la sécurité de SquadVibe.');
+    } catch (_) {
+      notice('Signalement impossible pour le moment. Vérifie les règles Firestore.');
+    }
+  }
+
   Future<void> respond(String requestId, String otherUid, bool accept) async {
     try {
       final me = FirebaseAuth.instance.currentUser!;
@@ -995,6 +1036,24 @@ class _FriendsPageState extends State<FriendsPage> {
                     leading: const CircleAvatar(backgroundColor: purple, child: Icon(Icons.person)),
                     title: Text(friendName),
                     subtitle: const Text('Ami SquadVibe'),
+                    trailing: PopupMenuButton<String>(
+                      tooltip: 'Options de cet ami',
+                      onSelected: (value) {
+                        if (value == 'report') reportUser(friendUid, friendName);
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem<String>(
+                          value: 'report',
+                          child: Row(
+                            children: [
+                              Icon(Icons.flag_outlined, size: 20),
+                              SizedBox(width: 10),
+                              Text('Signaler'),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ));
                 },
               );
