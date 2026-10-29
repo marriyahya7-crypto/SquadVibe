@@ -1159,13 +1159,14 @@ class MessagesPage extends StatelessWidget {
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: db.collection('calls')
               .where('calleeUid', isEqualTo: me.uid)
-              .where('status', isEqualTo: 'ringing')
+              .limit(20)
               .snapshots(),
           builder: (context, callSnap) {
             if (callSnap.hasError) {
               return const Text('Les appels entrants ne chargent pas. Vérifie les règles Firestore.', style: TextStyle(color: muted));
             }
-            if (!callSnap.hasData || callSnap.data!.docs.isEmpty) {
+            final ringingCalls = callSnap.data?.docs.where((doc) => doc.data()['status'] == 'ringing').toList() ?? const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+            if (!callSnap.hasData || ringingCalls.isEmpty) {
               return Container(
                 padding: const EdgeInsets.all(15),
                 decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(16)),
@@ -1176,7 +1177,7 @@ class MessagesPage extends StatelessWidget {
                 ]),
               );
             }
-            return Column(children: callSnap.data!.docs.map((callDoc) {
+            return Column(children: ringingCalls.map((callDoc) {
               final call = callDoc.data();
               final callerUid = call['callerUid'] as String? ?? '';
               final callerName = call['callerName'] as String? ?? 'Ami SquadVibe';
