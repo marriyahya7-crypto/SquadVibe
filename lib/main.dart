@@ -9,6 +9,9 @@ const background = Color(0xFF100D19);
 const panel = Color(0xFF201A2D);
 const muted = Color(0xFFAAA1BB);
 
+// Keeps the login screen mounted while signup cleanup is in progress.
+final ValueNotifier<bool> accountCreationInProgress = ValueNotifier<bool>(false);
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
@@ -52,20 +55,24 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingScreen();
-        }
+    return ValueListenableBuilder<bool>(
+      valueListenable: accountCreationInProgress,
+      builder: (context, isCreatingAccount, child) {
+        if (isCreatingAccount) return const LoginScreen();
 
-        final user = snapshot.data;
+        return StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const LoadingScreen();
+            }
 
-        if (user == null) {
-          return const LoginScreen();
-        }
+            final user = snapshot.data;
 
-        return HomeScreen(key: ValueKey(user.uid));
+            if (user == null) return const LoginScreen();
+            return HomeScreen(key: ValueKey(user.uid));
+          },
+        );
       },
     );
   }
@@ -157,6 +164,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => loading = true);
+    if (createAccount) accountCreationInProgress.value = true;
 
     UserCredential? credential;
     bool createdAuthAccount = false;
@@ -169,6 +177,15 @@ class _LoginScreenState extends State<LoginScreen> {
           throw Exception(
             'Pseudo : 3 à 20 caractères, lettres, chiffres, _ ou .',
           );
+        }
+
+        // Check first so an already-taken pseudo doesn't create/delete an auth user.
+        final existingUsername = await FirebaseFirestore.instance
+            .collection('usernames')
+            .doc(normalized)
+            .get();
+        if (existingUsername.exists) {
+          throw Exception('Ce pseudo est déjà utilisé.');
         }
 
         credential = await FirebaseAuth.instance
@@ -261,6 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
         e.toString().replaceFirst('Exception: ', ''),
       );
     } finally {
+      if (createAccount) accountCreationInProgress.value = false;
       if (mounted) setState(() => loading = false);
     }
   }
