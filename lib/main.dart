@@ -179,15 +179,6 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
 
-        // Check first so an already-taken pseudo doesn't create/delete an auth user.
-        final existingUsername = await FirebaseFirestore.instance
-            .collection('usernames')
-            .doc(normalized)
-            .get();
-        if (existingUsername.exists) {
-          throw Exception('Ce pseudo est déjà utilisé.');
-        }
-
         credential = await FirebaseAuth.instance
             .createUserWithEmailAndPassword(
           email: mail,
@@ -197,6 +188,15 @@ class _LoginScreenState extends State<LoginScreen> {
         createdAuthAccount = true;
 
         final user = credential.user!;
+
+        // Read the username only after authentication, as Firestore rules require auth.
+        final existingUsername = await FirebaseFirestore.instance
+            .collection('usernames')
+            .doc(normalized)
+            .get();
+        if (existingUsername.exists) {
+          throw Exception('Ce pseudo est déjà utilisé.');
+        }
 
         // Le pseudo et le profil sont créés ensemble.
         // Deux inscriptions ne peuvent pas réserver le même pseudo.
