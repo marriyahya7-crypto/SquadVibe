@@ -760,8 +760,8 @@ class _FriendsPageState extends State<FriendsPage> {
       final contact = await db.collection('friends').doc(me.uid).collection('contacts').doc(targetUid).get();
       if (contact.exists) { notice('Vous êtes déjà amis.'); return; }
 
-      final requestId = '\${me.uid}_$targetUid';
-      final reverseId = '\${targetUid}_\${me.uid}';
+      final requestId = '${me.uid}_$targetUid';
+      final reverseId = '${targetUid}_${me.uid}';
       final requestRef = db.collection('friendRequests').doc(requestId);
       final reverseRef = db.collection('friendRequests').doc(reverseId);
       final existing = await requestRef.get();
