@@ -757,8 +757,8 @@ class _FriendsPageState extends State<FriendsPage> {
       final myFriends = List<String>.from(myData['friends'] ?? const []);
       if (myFriends.contains(targetUid)) { notice('Vous êtes déjà amis.'); return; }
       final requests = FirebaseFirestore.instance.collection('friendRequests');
-      final existing = await requests.where('fromUid', isEqualTo: me.uid).where('toUid', isEqualTo: targetUid).where('status', isEqualTo: 'pending').limit(1).get();
-      if (existing.docs.isNotEmpty) { notice('Demande déjà envoyée.'); return; }
+      final existing = await requests.where('fromUid', isEqualTo: me.uid).where('toUid', isEqualTo: targetUid).limit(1).get();
+      if (existing.docs.any((d) => d.data()['status'] == 'pending')) { notice('Demande déjà envoyée.'); return; }
       await requests.add({
         'fromUid': me.uid,
         'fromUsername': myData['username'] ?? me.email?.split('@').first ?? 'Joueur',
@@ -813,12 +813,13 @@ class _FriendsPageState extends State<FriendsPage> {
       const Text('DEMANDES REÇUES', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
       const SizedBox(height: 8),
       StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: db.collection('friendRequests').where('toUid', isEqualTo: me.uid).where('status', isEqualTo: 'pending').snapshots(),
+        stream: db.collection('friendRequests').where('toUid', isEqualTo: me.uid).snapshots(),
         builder: (context, snap) {
           if (snap.hasError) return const Text('Demandes indisponibles : vérifie les règles Firestore.', style: TextStyle(color: muted));
           if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: purple));
-          if (snap.data!.docs.isEmpty) return const Text('Aucune demande reçue.', style: TextStyle(color: muted));
-          return Column(children: snap.data!.docs.map((doc) {
+          final pendingDocs = snap.data!.docs.where((d) => d.data()['status'] == 'pending').toList();
+          if (pendingDocs.isEmpty) return const Text('Aucune demande reçue.', style: TextStyle(color: muted));
+          return Column(children: pendingDocs.map((doc) {
             final data = doc.data();
             return Card(color: panel, child: ListTile(
               leading: const CircleAvatar(backgroundColor: purple, child: Icon(Icons.person)),
