@@ -6,6 +6,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function safeUsername(name) {
+      return name is string
+        && !name.matches('.*(fuck|shit|bitch|asshole|nigger|nigga|putain|merde|connard|connasse|encule|nique|salope|pedo|porn|porno|suicide|killall).*');
+    }
+
     function acceptedRequest(requestId, userId, friendUid) {
       return existsAfter(/databases/$(database)/documents/friendRequests/$(requestId))
         && getAfter(/databases/$(database)/documents/friendRequests/$(requestId)).data.status == 'accepted'
@@ -28,6 +33,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid', 'username', 'createdAt'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.username is string
+        && safeUsername(username)
         && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid))
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.usernameLower == username
         && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.username == request.resource.data.username
@@ -58,6 +64,7 @@ service cloud.firestore {
         ])
         && request.resource.data.username is string
         && request.resource.data.usernameLower is string
+        && safeUsername(request.resource.data.usernameLower)
         && request.resource.data.email is string
         && request.resource.data.bio is string
         && request.resource.data.friends is list
