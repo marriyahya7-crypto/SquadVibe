@@ -681,70 +681,69 @@ class ProfileContent extends StatelessWidget {
   final String username;
   final String email;
   final Future<void> Function() onSignOut;
-
-  const ProfileContent({
-    super.key,
-    required this.username,
-    required this.email,
-    required this.onSignOut,
-  });
+  const ProfileContent({super.key, required this.username, required this.email, required this.onSignOut});
 
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
       children: [
-        const Icon(Icons.account_circle, color: purple, size: 100),
-        const SizedBox(height: 12),
-        Text(
-          username,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 26,
-            fontWeight: FontWeight.bold,
+        Container(
+          padding: const EdgeInsets.fromLTRB(20, 25, 20, 23),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF39245B), Color(0xFF20172F)]),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: purple.withValues(alpha: 0.28)),
+          ),
+          child: Column(children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: purple, width: 2)),
+              child: CircleAvatar(radius: 42, backgroundColor: const Color(0xFF3A2A52), child: Text(username.isEmpty ? '?' : username[0].toUpperCase(), style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white))),
+            ),
+            const SizedBox(height: 14),
+            Text(username, textAlign: TextAlign.center, style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 5),
+            const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.verified_user_outlined, size: 15, color: Color(0xFFB69AFF)),
+              SizedBox(width: 6),
+              Text('Membre SquadVibe', style: TextStyle(color: muted, fontSize: 12)),
+            ]),
+          ]),
+        ),
+        const SizedBox(height: 25),
+        const Text('MON COMPTE', style: TextStyle(color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(20)),
+          child: Column(children: [
+            ListTile(leading: const Icon(Icons.alternate_email, color: purple), title: const Text('Pseudo'), subtitle: Text(username), trailing: const Icon(Icons.lock_outline, size: 17, color: muted)),
+            const Divider(height: 1, indent: 56, endIndent: 16),
+            ListTile(leading: const Icon(Icons.email_outlined, color: purple), title: const Text('Adresse e-mail'), subtitle: Text(email), trailing: const Icon(Icons.lock_outline, size: 17, color: muted)),
+          ]),
+        ),
+        const SizedBox(height: 24),
+        const Text('PERSONNALISATION', style: TextStyle(color: muted, letterSpacing: 1.6, fontWeight: FontWeight.w800, fontSize: 12)),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(color: panel, borderRadius: BorderRadius.circular(20)),
+          child: ListTile(
+            leading: const Icon(Icons.workspace_premium_outlined, color: Color(0xFFFFC857)),
+            title: const Text('SquadVibe Nitro', style: TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: const Text('Découvre les thèmes et avantages à venir.', style: TextStyle(color: muted)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ouvre l’onglet Nitro pour découvrir l’offre.'))),
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          email,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: muted),
-        ),
-        const SizedBox(height: 30),
-        const Text(
-          'Informations du compte',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        const SizedBox(height: 14),
-        ListTile(
-          tileColor: panel,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          leading: const Icon(Icons.person_outline, color: purple),
-          title: const Text('Pseudo'),
-          subtitle: Text(username),
-        ),
-        const SizedBox(height: 12),
-        ListTile(
-          tileColor: panel,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          leading: const Icon(Icons.email_outlined, color: purple),
-          title: const Text('E-mail'),
-          subtitle: Text(email),
-        ),
-        const SizedBox(height: 28),
+        const SizedBox(height: 24),
         FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: Colors.redAccent,
-            padding: const EdgeInsets.all(16),
-          ),
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFF39202B), foregroundColor: const Color(0xFFFF8C9B), padding: const EdgeInsets.all(16)),
           onPressed: onSignOut,
           icon: const Icon(Icons.logout),
-          label: const Text('Se déconnecter'),
+          label: const Text('Se déconnecter', style: TextStyle(fontWeight: FontWeight.w800)),
         ),
+        const SizedBox(height: 14),
+        const Center(child: Text('SquadVibe • version 1.0', style: TextStyle(color: muted, fontSize: 11))),
       ],
     );
   }
