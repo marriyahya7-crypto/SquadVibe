@@ -1,0 +1,137 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function acceptedRequest(requestId, userId, friendUid) {
+      return existsAfter(/databases/$(database)/documents/friendRequests/$(requestId))
+        && getAfter(/databases/$(database)/documents/friendRequests/$(requestId)).data.status == 'accepted'
+        && (
+          (
+            getAfter(/databases/$(database)/documents/friendRequests/$(requestId)).data.senderUid == userId
+            && getAfter(/databases/$(database)/documents/friendRequests/$(requestId)).data.receiverUid == friendUid
+          )
+          ||
+          (
+            getAfter(/databases/$(database)/documents/friendRequests/$(requestId)).data.senderUid == friendUid
+            && getAfter(/databases/$(database)/documents/friendRequests/$(requestId)).data.receiverUid == userId
+          )
+        );
+    }
+
+    match /usernames/{username} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['uid', 'username', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username is string
+        && !exists(/databases/$(database)/documents/usernames/$(username));
+      allow update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'uid', 'username', 'usernameLower', 'email', 'bio', 'friends', 'createdAt'
+        ])
+        && request.resource.data.username is string
+        && request.resource.data.usernameLower is string
+        && request.resource.data.email is string
+        && request.resource.data.bio is string
+        && request.resource.data.friends is list;
+      allow update, delete: if false;
+    }
+
+    match /friendRequests/{requestId} {
+      allow read: if signedIn()
+        && (
+          resource.data.senderUid == request.auth.uid
+          || resource.data.receiverUid == request.auth.uid
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'senderUid', 'receiverUid', 'status', 'createdAt'
+        ])
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.receiverUid is string
+        && request.resource.data.receiverUid != request.auth.uid
+        && requestId == request.resource.data.senderUid + '_' + request.resource.data.receiverUid
+        && request.resource.data.status == 'pending';
+
+      allow update: if signedIn()
+        && resource.data.receiverUid == request.auth.uid
+        && resource.data.status == 'pending'
+        && request.resource.data.senderUid == resource.data.senderUid
+        && request.resource.data.receiverUid == resource.data.receiverUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['accepted', 'declined'];
+
+      allow delete: if signedIn()
+        && (
+          resource.data.senderUid == request.auth.uid
+          || resource.data.receiverUid == request.auth.uid
+        );
+    }
+
+    match /friends/{userId}/contacts/{friendUid} {
+      allow read: if signedIn() && request.auth.uid == userId;
+
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['uid', 'requestId', 'createdAt'])
+        && request.resource.data.uid == friendUid
+        && request.resource.data.requestId is string
+        && acceptedRequest(request.resource.data.requestId, userId, friendUid);
+
+      allow update: if false;
+      allow delete: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /chats/{chatId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'members', 'memberNames', 'lastMessage', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == 2
+        && request.auth.uid in request.resource.data.members
+        && (
+          exists(/databases/$(database)/documents/friends/$(request.resource.data.members[0])/contacts/$(request.resource.data.members[1]))
+          || exists(/databases/$(database)/documents/friends/$(request.resource.data.members[1])/contacts/$(request.resource.data.members[0]))
+        );
+
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.members
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'updatedAt'])
+        && request.resource.data.lastMessage is string
+        && request.resource.data.lastMessage.size() <= 2000;
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['senderUid', 'text', 'createdAt'])
+          && request.resource.data.senderUid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 2000
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+
+        allow update, delete: if false;
+      }
+    }
+  }
+}
