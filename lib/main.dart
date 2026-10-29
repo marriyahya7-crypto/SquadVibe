@@ -730,7 +730,10 @@ class _FriendsPageState extends State<FriendsPage> {
   bool busy = false;
 
   @override
-  void dispose() { search.dispose(); super.dispose(); }
+  void dispose() {
+    search.dispose();
+    super.dispose();
+  }
 
   void notice(String text) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -744,114 +747,156 @@ class _FriendsPageState extends State<FriendsPage> {
     setState(() => busy = true);
     try {
       final me = FirebaseAuth.instance.currentUser!;
-      final username = await FirebaseFirestore.instance.collection('usernames').doc(normalized).get();
-      if (!username.exists) { notice('Aucun compte trouvé avec ce pseudo.'); return; }
-      final targetUid = username.data()?['uid'] as String?;
-      final targetName = username.data()?['username'] as String? ?? typed;
+      final db = FirebaseFirestore.instance;
+      final usernameDoc = await db.collection('usernames').doc(normalized).get();
+      if (!usernameDoc.exists) { notice('Aucun compte trouvé avec ce pseudo.'); return; }
+      final usernameData = usernameDoc.data()!;
+      final targetUid = usernameData['uid'] as String?;
+      final targetName = usernameData['username'] as String? ?? typed;
       if (targetUid == null || targetUid == me.uid) {
         notice(targetUid == me.uid ? 'Tu ne peux pas t’ajouter toi-même.' : 'Profil invalide.');
         return;
       }
-      final myDoc = await FirebaseFirestore.instance.collection('users').doc(me.uid).get();
-      final myData = myDoc.data() ?? {};
-      final myFriends = List<String>.from(myData['friends'] ?? const []);
-      if (myFriends.contains(targetUid)) { notice('Vous êtes déjà amis.'); return; }
-      final requests = FirebaseFirestore.instance.collection('friendRequests');
-      final existing = await requests.where('fromUid', isEqualTo: me.uid).get();
-      if (existing.docs.any((d) => d.data()['toUid'] == targetUid && d.data()['status'] == 'pending')) { notice('Demande déjà envoyée.'); return; }
-      await requests.add({
-        'fromUid': me.uid,
-        'fromUsername': myData['username'] ?? me.email?.split('@').first ?? 'Joueur',
-        'toUid': targetUid,
-        'toUsername': targetName,
+      final contact = await db.collection('friends').doc(me.uid).collection('contacts').doc(targetUid).get();
+      if (contact.exists) { notice('Vous êtes déjà amis.'); return; }
+
+      final requestId = '\${me.uid}_$targetUid';
+      final reverseId = '\${targetUid}_\${me.uid}';
+      final requestRef = db.collection('friendRequests').doc(requestId);
+      final reverseRef = db.collection('friendRequests').doc(reverseId);
+      final existing = await requestRef.get();
+      if (existing.exists && existing.data()?['status'] == 'pending') { notice('Demande déjà envoyée.'); return; }
+      final reverse = await reverseRef.get();
+      if (reverse.exists && reverse.data()?['status'] == 'pending') {
+        notice('Cette personne t’a déjà envoyé une demande. Regarde les demandes reçues.');
+        return;
+      }
+      await requestRef.set({
+        'senderUid': me.uid,
+        'receiverUid': targetUid,
         'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
       search.clear();
-      notice('Demande envoyée à ' + targetName + ' !');
+      notice('Demande envoyée à $targetName !');
     } catch (_) {
-      notice('Impossible d’envoyer la demande : les règles Firestore doivent autoriser friendRequests.');
+      notice('Envoi impossible : vérifie les règles Firestore.');
     } finally {
       if (mounted) setState(() => busy = false);
     }
   }
 
-  Future<void> respond(String id, String otherUid, bool accept) async {
+  Future<void> respond(String requestId, String otherUid, bool accept) async {
     try {
       final me = FirebaseAuth.instance.currentUser!;
       final db = FirebaseFirestore.instance;
-      final ref = db.collection('friendRequests').doc(id);
+      final requestRef = db.collection('friendRequests').doc(requestId);
       if (accept) {
         final batch = db.batch();
-        batch.update(db.collection('users').doc(me.uid), {'friends': FieldValue.arrayUnion([otherUid])});
-        batch.update(db.collection('users').doc(otherUid), {'friends': FieldValue.arrayUnion([me.uid])});
-        batch.update(ref, {'status': 'accepted'});
+        batch.update(requestRef, {'status': 'accepted'});
+        batch.set(db.collection('friends').doc(me.uid).collection('contacts').doc(otherUid), {
+          'uid': otherUid,
+          'requestId': requestId,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+        batch.set(db.collection('friends').doc(otherUid).collection('contacts').doc(me.uid), {
+          'uid': me.uid,
+          'requestId': requestId,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
         await batch.commit();
         notice('Demande acceptée !');
       } else {
-        await ref.update({'status': 'rejected'});
+        await requestRef.update({'status': 'declined'});
         notice('Demande refusée.');
       }
-    } catch (_) { notice('Action impossible : vérifie les règles Firestore.'); }
+    } catch (_) {
+      notice('Action impossible : vérifie les règles Firestore.');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final me = FirebaseAuth.instance.currentUser!;
     final db = FirebaseFirestore.instance;
-    return ListView(padding: const EdgeInsets.all(18), children: [
-      const Text('TES AMIS', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-      const SizedBox(height: 6),
-      const Text('Recherche un pseudo pour envoyer une demande.', style: TextStyle(color: muted)),
-      const SizedBox(height: 16),
-      Row(children: [
-        Expanded(child: TextField(controller: search, textInputAction: TextInputAction.search, onSubmitted: (_) => sendRequest(), decoration: const InputDecoration(hintText: 'Pseudo de ton ami', prefixIcon: Icon(Icons.search)))),
-        const SizedBox(width: 8),
-        IconButton.filled(onPressed: busy ? null : sendRequest, icon: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.person_add_alt_1)),
-      ]),
-      const SizedBox(height: 24),
-      const Text('DEMANDES REÇUES', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-      const SizedBox(height: 8),
-      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: db.collection('friendRequests').where('toUid', isEqualTo: me.uid).snapshots(),
-        builder: (context, snap) {
-          if (snap.hasError) return const Text('Demandes indisponibles : vérifie les règles Firestore.', style: TextStyle(color: muted));
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: purple));
-          final pendingDocs = snap.data!.docs.where((d) => d.data()['status'] == 'pending').toList();
-          if (pendingDocs.isEmpty) return const Text('Aucune demande reçue.', style: TextStyle(color: muted));
-          return Column(children: pendingDocs.map((doc) {
-            final data = doc.data();
-            return Card(color: panel, child: ListTile(
-              leading: const CircleAvatar(backgroundColor: purple, child: Icon(Icons.person)),
-              title: Text(data['fromUsername'] as String? ?? 'Joueur'),
-              subtitle: const Text('Demande d’ami'),
-              trailing: Wrap(spacing: 0, children: [
-                IconButton(onPressed: () => respond(doc.id, data['fromUid'] as String? ?? '', true), icon: const Icon(Icons.check_circle, color: Colors.green)),
-                IconButton(onPressed: () => respond(doc.id, data['fromUid'] as String? ?? '', false), icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent)),
-              ]),
-            ));
-          }).toList());
-        },
-      ),
-      const SizedBox(height: 24),
-      const Text('MA LISTE D’AMIS', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
-      const SizedBox(height: 8),
-      StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: db.collection('users').doc(me.uid).snapshots(),
-        builder: (context, snap) {
-          final ids = List<String>.from(snap.data?.data()?['friends'] ?? const []);
-          if (ids.isEmpty) return const Text('Tes amis acceptés apparaîtront ici.', style: TextStyle(color: muted));
-          return Column(children: ids.map((id) => FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            future: db.collection('users').doc(id).get(),
-            builder: (context, friend) => Card(color: panel, child: ListTile(
-              leading: const CircleAvatar(backgroundColor: purple, child: Icon(Icons.person)),
-              title: Text(friend.data?.data()?['username'] as String? ?? 'Joueur'),
-              subtitle: const Text('Ami SquadVibe'),
-            )),
-          )).toList());
-        },
-      ),
-    ]);
+    return ListView(
+      padding: const EdgeInsets.all(18),
+      children: [
+        const Text('TES AMIS', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+        const SizedBox(height: 6),
+        const Text('Recherche un pseudo pour envoyer une demande.', style: TextStyle(color: muted)),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: TextField(
+            controller: search,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (_) => sendRequest(),
+            decoration: const InputDecoration(hintText: 'Pseudo de ton ami', prefixIcon: Icon(Icons.search)),
+          )),
+          const SizedBox(width: 8),
+          IconButton.filled(
+            onPressed: busy ? null : sendRequest,
+            icon: busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.person_add_alt_1),
+          ),
+        ]),
+        const SizedBox(height: 24),
+        const Text('DEMANDES REÇUES', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+        const SizedBox(height: 8),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: db.collection('friendRequests').where('receiverUid', isEqualTo: me.uid).snapshots(),
+          builder: (context, snap) {
+            if (snap.hasError) return const Text('Demandes indisponibles : vérifie les règles Firestore.', style: TextStyle(color: muted));
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: purple));
+            final docs = snap.data!.docs.where((d) => d.data()['status'] == 'pending').toList();
+            if (docs.isEmpty) return const Text('Aucune demande reçue.', style: TextStyle(color: muted));
+            return Column(children: docs.map((doc) {
+              final senderUid = doc.data()['senderUid'] as String? ?? '';
+              return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                future: db.collection('users').doc(senderUid).get(),
+                builder: (context, userSnap) {
+                  final senderName = userSnap.data?.data()?['username'] as String? ?? 'Joueur';
+                  return Card(color: panel, child: ListTile(
+                    leading: const CircleAvatar(backgroundColor: purple, child: Icon(Icons.person)),
+                    title: Text(senderName),
+                    subtitle: const Text('Demande d’ami'),
+                    trailing: Wrap(spacing: 0, children: [
+                      IconButton(onPressed: () => respond(doc.id, senderUid, true), icon: const Icon(Icons.check_circle, color: Colors.green)),
+                      IconButton(onPressed: () => respond(doc.id, senderUid, false), icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent)),
+                    ]),
+                  ));
+                },
+              );
+            }).toList());
+          },
+        ),
+        const SizedBox(height: 24),
+        const Text('MA LISTE D’AMIS', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1)),
+        const SizedBox(height: 8),
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: db.collection('friends').doc(me.uid).collection('contacts').snapshots(),
+          builder: (context, snap) {
+            if (snap.hasError) return const Text('Liste d’amis indisponible : vérifie les règles Firestore.', style: TextStyle(color: muted));
+            if (!snap.hasData) return const Center(child: CircularProgressIndicator(color: purple));
+            final docs = snap.data!.docs;
+            if (docs.isEmpty) return const Text('Tes amis acceptés apparaîtront ici.', style: TextStyle(color: muted));
+            return Column(children: docs.map((doc) {
+              final friendUid = doc.data()['uid'] as String? ?? doc.id;
+              return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                future: db.collection('users').doc(friendUid).get(),
+                builder: (context, friendSnap) {
+                  final friendName = friendSnap.data?.data()?['username'] as String? ?? 'Joueur';
+                  return Card(color: panel, child: ListTile(
+                    leading: const CircleAvatar(backgroundColor: purple, child: Icon(Icons.person)),
+                    title: Text(friendName),
+                    subtitle: const Text('Ami SquadVibe'),
+                  ));
+                },
+              );
+            }).toList());
+          },
+        ),
+      ],
+    );
   }
 }
 
